@@ -1,0 +1,5 @@
+{
+  "name": "TypeMaster AI",
+  "description": "An intelligent, interactive typing tutor with real-time visual hand guidance, acoustic feedback, and AI-generated custom lessons powered by Gemini.",
+  "requestFramePermissions": []
+}
