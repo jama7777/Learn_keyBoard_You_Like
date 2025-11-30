@@ -134,42 +134,36 @@ export const PRESET_LESSONS = [
     id: '1', 
     title: 'Home Row (a-k)', 
     description: 'Master the home row: a, s, d, f, g, h, j, k, l, ;', 
-    mode: LessonMode.HOME_ROW, 
-    content: "asdfghjkl; asdfghjkl; aa ss dd ff gg hh jj kk ll ;; ask dad; has a glass; a flask of salad; half a jag; had a lad;" 
+    mode: LessonMode.HOME_ROW
   },
   { 
     id: '2', 
     title: 'Numbers & Letters', 
     description: 'Mixed practice: alphabets and numbers.', 
-    mode: LessonMode.ALPHANUMERIC, 
-    content: "abc123 xyz890 user1 a2b3 c4d5 7up 3 blind mice 2001 space odyssey r2d2 c3po 4chan 9gag 1st 2nd 3rd" 
+    mode: LessonMode.ALPHANUMERIC
   },
   { 
     id: '3', 
     title: 'Top Row', 
     description: 'Q, W, E, R, T, Y, U, I, O, P', 
-    mode: LessonMode.TOP_ROW, 
-    content: "qwertyuiop qwertyuiop quiet power writer your tree top propriety" 
+    mode: LessonMode.TOP_ROW
   },
   { 
     id: '4', 
     title: 'Bottom Row', 
     description: 'Z, X, C, V, B, N, M', 
-    mode: LessonMode.BOTTOM_ROW, 
-    content: "zxcvbnm zxcvbnm zebra van ban man moon cab zen mix" 
+    mode: LessonMode.BOTTOM_ROW
   },
   { 
     id: '5', 
     title: 'Numbers & Symbols', 
     description: 'Advanced: !, @, #, $, %, etc.', 
-    mode: LessonMode.SYMBOLS, 
-    content: "var x = 10; if (y > 5) { return true; } user_id: #12345; email@test.com $100.00 (5+5)=10" 
+    mode: LessonMode.SYMBOLS
   },
   { 
     id: '6', 
     title: 'Full Practice', 
     description: 'Real world sentences with everything.', 
-    mode: LessonMode.ALL, 
-    content: "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. Sphinx of black quartz, judge my vow." 
+    mode: LessonMode.ALL
   },
 ];

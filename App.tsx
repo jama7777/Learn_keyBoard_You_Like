@@ -5,6 +5,7 @@ import { LessonConfig, LessonMode, Stats } from './types';
 import { PRESET_LESSONS, CHAR_TO_KEY_MAP } from './constants';
 import { audioService } from './services/audioService';
 import { generateLessonContent } from './services/geminiService';
+import { generateLessonText } from './services/lessonGenerator';
 
 import VirtualKeyboard from './components/VirtualKeyboard';
 import Hands from './components/Hands';
@@ -69,7 +70,7 @@ const App: React.FC = () => {
 
   const startLesson = async (lesson: LessonConfig) => {
     setIsLoading(true);
-    let lessonText = lesson.content || '';
+    let lessonText = '';
 
     // If AI mode, fetch content
     if (lesson.mode === LessonMode.AI_CUSTOM) {
@@ -77,6 +78,15 @@ const App: React.FC = () => {
         lessonText = await generateLessonContent(customTopic || 'technology');
       } catch (err) {
         lessonText = "Error loading content. Please try again.";
+      }
+    } else {
+      // Use local generator for dynamic practice content
+      // This ensures every time a lesson is selected, the content is new/randomized
+      lessonText = generateLessonText(lesson.mode);
+      
+      // Fallback to static content if generator fails (rare)
+      if (!lessonText && lesson.content) {
+        lessonText = lesson.content;
       }
     }
 
@@ -92,8 +102,24 @@ const App: React.FC = () => {
   };
 
   const resetLesson = () => {
-    if (currentLesson) startLesson(currentLesson);
+    // For "Retry", let's keep the same text to allow mastery of that specific sequence.
+    if (currentLesson) {
+       // Just reset state variables, keep text
+       setCurrentIndex(0);
+       setStats({ wpm: 0, accuracy: 100, errors: 0, progress: 0, timeElapsed: 0 });
+       setHasStarted(false);
+       setIsCompleted(false);
+       setIsError(false);
+       startTimeRef.current = null;
+    }
   };
+  
+  // New function to generate a fresh lesson of the same type
+  const newRandomLesson = () => {
+      if (currentLesson) {
+          startLesson(currentLesson);
+      }
+  }
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!currentLesson || isCompleted || isLoading) return;
@@ -232,19 +258,28 @@ const App: React.FC = () => {
             <span className="text-xs text-slate-400 uppercase font-semibold">ACC</span>
           </div>
         </div>
-        <button 
-          onClick={resetLesson}
-          className="text-slate-400 hover:text-blue-400 transition-colors"
-          title="Restart Lesson"
-        >
-          <RotateCcw size={24} />
-        </button>
+        <div className="flex gap-2">
+            <button 
+            onClick={resetLesson}
+            className="text-slate-400 hover:text-blue-400 transition-colors p-2 rounded hover:bg-slate-800"
+            title="Retry Same Text"
+            >
+            <RotateCcw size={20} />
+            </button>
+            <button 
+            onClick={newRandomLesson}
+            className="text-slate-400 hover:text-green-400 transition-colors p-2 rounded hover:bg-slate-800"
+            title="New Random Text"
+            >
+            <Brain size={20} />
+            </button>
+        </div>
       </div>
 
       {isLoading ? (
         <div className="flex flex-col items-center justify-center h-64 animate-pulse">
            <Brain className="text-indigo-500 mb-4" size={48} />
-           <p className="text-slate-300">Consulting the AI...</p>
+           <p className="text-slate-300">Generating lesson...</p>
         </div>
       ) : (
         <>
@@ -287,15 +322,21 @@ const App: React.FC = () => {
             <div className="flex flex-col gap-3">
               <button 
                 onClick={resetLesson}
+                className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <RotateCcw size={18} /> Retry Same Text
+              </button>
+              <button 
+                onClick={newRandomLesson}
                 className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
-                <RotateCcw size={18} /> Retry Lesson
+                <Brain size={18} /> New Random Text
               </button>
               <button 
                 onClick={() => setCurrentLesson(null)}
                 className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-lg transition-colors"
               >
-                Choose Another Lesson
+                Back to Menu
               </button>
             </div>
           </div>
