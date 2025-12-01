@@ -24,17 +24,33 @@ const SENTENCES = [
   "A wizard’s job is to vex chumps quickly in fog.",
   "Watch 'Jeopardy!', Alex Trebek's fun TV quiz game.",
   "By Jove, my quick study of lexicography won a prize!",
-  "Woven silk pyjamas exchanged for quarters."
+  "Woven silk pyjamas exchanged for quarters.",
+  "Amazingly few discotheques provide jukeboxes.",
+  "Heavy boxes perform quick waltzes and jigs."
 ];
 
+// Helper: Get random integer 0 to max-1
 function randomInt(max: number) {
   return Math.floor(Math.random() * max);
 }
 
+// Helper: Get random item from array
 function randomItem<T>(arr: T[]): T {
+  if (arr.length === 0) return undefined as any;
   return arr[randomInt(arr.length)];
 }
 
+// Helper: Fisher-Yates Shuffle for true randomness
+function shuffleArray<T>(array: T[]): T[] {
+  const newArr = [...array];
+  for (let i = newArr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+  }
+  return newArr;
+}
+
+// Helper: Generate a string of random groups (e.g., "jkfd lksd")
 function generateRandomPattern(chars: string[], count: number, groupSize: number): string {
   const groups = [];
   for (let i = 0; i < count; i++) {
@@ -48,86 +64,87 @@ function generateRandomPattern(chars: string[], count: number, groupSize: number
 }
 
 export const generateLessonText = (mode: LessonMode): string => {
+  let contentParts: string[] = [];
+
   switch (mode) {
     case LessonMode.HOME_ROW: {
       const keys = "asdfghjkl;".split('');
-      // Mix of patterns and existing home-row words
-      const words = ["asdf", "jkl;", "dad", "sad", "lad", "fall", "flask", "half", "ask", "all", "has", "had", "glass", "sash", "jag", "add", "salad", "dad", "fad", "gash", "flag"];
+      const words = ["asdf", "jkl;", "dad", "sad", "lad", "fall", "flask", "half", "ask", "all", "has", "had", "glass", "sash", "jag", "add", "salad", "fad", "gash", "flag", "hall", "dash", "slash"];
       
-      let content = [];
-      // Add some pure muscle memory patterns
-      content.push(generateRandomPattern(keys, 3, 4));
-      // Add random words
-      for(let i=0; i<8; i++) content.push(randomItem(words));
-      // Add more patterns
-      content.push(generateRandomPattern(keys, 3, 3));
-      
-      return content.sort(() => Math.random() - 0.5).join(' ');
+      // Structure: Pattern -> Words -> Pattern -> Words
+      contentParts.push(generateRandomPattern(keys, 2, 4));
+      contentParts.push(shuffleArray(words).slice(0, 5).join(' '));
+      contentParts.push(generateRandomPattern(keys, 2, 5));
+      contentParts.push(shuffleArray(words).slice(0, 5).join(' '));
+      break;
     }
     
     case LessonMode.TOP_ROW: {
       const keys = "qwertyuiop".split('');
-      const words = ["top", "pot", "toy", "tree", "try", "type", "write", "quit", "power", "quiet", "were", "we", "you", "your", "tier", "row", "rope"];
-      let content = [];
-      content.push(generateRandomPattern(keys, 3, 5));
-      for(let i=0; i<8; i++) content.push(randomItem(words));
-      return content.sort(() => Math.random() - 0.5).join(' ');
+      const words = ["top", "pot", "toy", "tree", "try", "type", "write", "quit", "power", "quiet", "were", "we", "you", "your", "tier", "row", "rope", "pour", "router", "writer", "prop"];
+      
+      contentParts.push(generateRandomPattern(keys, 3, 4));
+      contentParts.push(shuffleArray(words).slice(0, 8).join(' '));
+      break;
     }
 
     case LessonMode.BOTTOM_ROW: {
       const keys = "zxcvbnm,.".split('');
-      const words = ["zoo", "van", "ban", "man", "cab", "can", "mix", "zen", "zero", "moon", "bomb", "vac"];
-      let content = [];
-      content.push(generateRandomPattern(keys, 3, 4));
-      for(let i=0; i<8; i++) content.push(randomItem(words));
-      return content.sort(() => Math.random() - 0.5).join(' ');
+      const words = ["zoo", "van", "ban", "man", "cab", "can", "mix", "zen", "zero", "moon", "bomb", "vac", "cave", "name", "bacon", "zone"];
+      
+      contentParts.push(generateRandomPattern(keys, 3, 4));
+      contentParts.push(shuffleArray(words).slice(0, 8).join(' '));
+      break;
     }
     
     case LessonMode.NUMBERS: {
-      return generateRandomPattern("0123456789".split(''), 10, 5);
+      const nums = "0123456789".split('');
+      // Generate phone number style and random blocks
+      contentParts.push(generateRandomPattern(nums, 4, 3));
+      contentParts.push(generateRandomPattern(nums, 4, 4));
+      contentParts.push(generateRandomPattern(nums, 4, 2));
+      break;
     }
 
     case LessonMode.ALPHANUMERIC: {
-      // Numbers with alphabets
       const letters = "abcdefghijklmnopqrstuvwxyz".split('');
       const numbers = "0123456789".split('');
       const combined = [...letters, ...numbers];
       
-      // Generate IDs or codes style
-      const p1 = generateRandomPattern(combined, 4, 4);
-      const p2 = generateRandomPattern(numbers, 2, 5);
-      const p3 = generateRandomPattern(letters, 2, 5);
-      
-      return `${p1} ${p2} ${p3} ${generateRandomPattern(combined, 3, 6)}`.split(' ').sort(() => Math.random() - 0.5).join(' ');
+      // Mix of patterns: "abc1", "123a", etc.
+      contentParts.push(generateRandomPattern(combined, 3, 4)); // mixed 4 chars
+      contentParts.push(generateRandomPattern(numbers, 2, 3));  // pure numbers
+      contentParts.push(generateRandomPattern(letters, 2, 3));  // pure letters
+      contentParts.push(generateRandomPattern(combined, 3, 5)); // mixed 5 chars
+      break;
     }
     
     case LessonMode.SYMBOLS: {
-       const chars = "!@#$%^&*()".split('');
+       const syms = "!@#$%^&*()".split('');
        const numbers = "0123456789".split('');
-       return generateRandomPattern([...chars, ...numbers], 10, 5) + " " + generateRandomPattern(chars, 5, 3);
+       const mixed = [...syms, ...numbers];
+       
+       contentParts.push(generateRandomPattern(mixed, 5, 4));
+       contentParts.push(generateRandomPattern(syms, 5, 2));
+       break;
     }
     
     case LessonMode.ALL: 
-    case LessonMode.ALPHABETS: {
-        // Randomly choose between sentence mode or random word mode
-        const modeRoll = Math.random();
-        if (modeRoll > 0.6) {
+    case LessonMode.ALPHABETS: 
+    default: {
+        const roll = Math.random();
+        if (roll > 0.5) {
              // 2 Random sentences
-             return randomItem(SENTENCES) + " " + randomItem(SENTENCES);
-        } else if (modeRoll > 0.3) {
-             // Random common words
-             let w = [];
-             for(let i=0; i<15; i++) w.push(randomItem(COMMON_WORDS));
-             return w.join(' ');
+             const s = shuffleArray(SENTENCES);
+             return s[0] + " " + s[1];
         } else {
-             // Paragraph style
-             const s1 = randomItem(SENTENCES);
-             const s2 = randomItem(SENTENCES);
-             return `${s1} ${s2}`;
+             // Random common words paragraph
+             const w = shuffleArray(COMMON_WORDS).slice(0, 12);
+             return w.join(' ');
         }
     }
-
-    default:
-       return "The quick brown fox jumps over the lazy dog.";
   }
+
+  // Shuffle the parts themselves so the "Pattern -> Words" structure isn't always the same order
+  return shuffleArray(contentParts).join(' ');
 };
