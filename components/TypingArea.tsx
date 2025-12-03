@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 
 interface TypingAreaProps {
   fullText: string;
@@ -7,14 +7,41 @@ interface TypingAreaProps {
 
 const TypingArea: React.FC<TypingAreaProps> = ({ fullText, typedHistory }) => {
   const currentIndex = typedHistory.length;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const activeCharRef = useRef<HTMLSpanElement>(null);
+
+  // Auto-scroll logic to keep the cursor in view
+  useEffect(() => {
+    if (activeCharRef.current && containerRef.current) {
+      const container = containerRef.current;
+      const activeChar = activeCharRef.current;
+
+      // Calculate the offset of the active character relative to the container
+      const topOffset = activeChar.offsetTop;
+      const containerHeight = container.clientHeight;
+
+      // Attempt to position the active line at roughly 35-40% of the container height
+      // This leaves space above for context and space below for upcoming text
+      const targetScrollPosition = topOffset - (containerHeight * 0.35);
+
+      container.scrollTo({
+        top: Math.max(0, targetScrollPosition),
+        behavior: 'smooth'
+      });
+    }
+  }, [currentIndex]); // Re-run whenever the user types
 
   return (
     <div className="relative w-full max-w-4xl mx-auto mb-8">
-      <div className="
-        bg-slate-800/80 backdrop-blur-md rounded-2xl p-8 shadow-inner border border-slate-700 min-h-[160px] 
-        text-3xl font-mono leading-relaxed break-words whitespace-pre-wrap
-        transition-all duration-100
-      ">
+      <div 
+        ref={containerRef}
+        className="
+          bg-slate-800/80 backdrop-blur-md rounded-2xl p-8 shadow-inner border border-slate-700 
+          h-64 overflow-hidden relative
+          text-3xl font-mono leading-relaxed break-words whitespace-pre-wrap
+          transition-all duration-100
+        "
+      >
         {fullText.split('').map((char, index) => {
           const isTyped = index < typedHistory.length;
           const isCorrect = isTyped && typedHistory[index] === char;
@@ -39,12 +66,16 @@ const TypingArea: React.FC<TypingAreaProps> = ({ fullText, typedHistory }) => {
                className += "bg-red-500/10 ";
             }
           } else {
-            // Pending
-            className += "text-slate-600 opacity-60 ";
+            // Pending - Made brighter for better visibility
+            className += "text-slate-500 opacity-90 ";
           }
 
           return (
-            <span key={index} className={className}>
+            <span 
+              key={index} 
+              ref={isCurrent ? activeCharRef : null}
+              className={className}
+            >
               {char}
               {/* Blinking Cursor Indicator */}
               {isCurrent && (
