@@ -21,7 +21,6 @@ const TypingArea: React.FC<TypingAreaProps> = ({ fullText, typedHistory }) => {
       const containerHeight = container.clientHeight;
 
       // Attempt to position the active line at roughly 35-40% of the container height
-      // This leaves space above for context and space below for upcoming text
       const targetScrollPosition = topOffset - (containerHeight * 0.35);
 
       container.scrollTo({
@@ -60,14 +59,33 @@ const TypingArea: React.FC<TypingAreaProps> = ({ fullText, typedHistory }) => {
             // Error
             className += "text-red-400 "; 
             if (char === ' ') {
-               // Make space errors visible
                className += "bg-red-500/40 ";
+            } else if (char === '\n') {
+               className += "bg-red-500/40 min-w-[1em] ";
             } else {
                className += "bg-red-500/10 ";
             }
           } else {
-            // Pending - Made brighter for better visibility
+            // Pending
             className += "text-slate-500 opacity-90 ";
+          }
+
+          // Special rendering for Newlines to make them visible and targetable
+          if (char === '\n') {
+            return (
+                <span 
+                    key={index} 
+                    ref={isCurrent ? activeCharRef : null}
+                    className={className + " w-full block mb-2"} // Force line break but keep the span for cursor
+                    style={{ height: 'auto' }}
+                >
+                    <span className="opacity-30 text-xs align-middle">↵</span>
+                    {/* Blinking Cursor Indicator logic mostly handled by style above, but we need the marker */}
+                    {isCurrent && (
+                        <span className="inline-block w-[2px] h-6 bg-blue-400 cursor-blink ml-1 align-middle"></span>
+                    )}
+                </span>
+            );
           }
 
           return (

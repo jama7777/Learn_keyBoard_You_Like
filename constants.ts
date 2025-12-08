@@ -126,8 +126,9 @@ KEYBOARD_ROWS.forEach(row => {
     if (key.label === '/') CHAR_TO_KEY_MAP['?'] = { code: key.code, finger: key.finger, shift: true };
   });
 });
-// Manually add space
+// Manually add space and newline
 CHAR_TO_KEY_MAP[' '] = { code: 'Space', finger: 'L_THUMB' };
+CHAR_TO_KEY_MAP['\n'] = { code: 'Enter', finger: 'R_PINKY' };
 
 export const PRESET_LESSONS = [
   { 

@@ -1,6 +1,7 @@
 class AudioService {
   private context: AudioContext | null = null;
   private gainNode: GainNode | null = null;
+  private muted: boolean = false;
 
   private init() {
     if (!this.context) {
@@ -10,8 +11,13 @@ class AudioService {
     }
   }
 
+  public setMuted(muted: boolean) {
+    this.muted = muted;
+  }
+
   // High-pitched click for correct keystroke (mechanical switch simulation)
   public playClick() {
+    if (this.muted) return;
     this.init();
     if (!this.context || !this.gainNode) return;
 
@@ -39,6 +45,7 @@ class AudioService {
 
   // Low dull thud for error
   public playError() {
+    if (this.muted) return;
     this.init();
     if (!this.context || !this.gainNode) return;
 

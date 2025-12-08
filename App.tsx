@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, RotateCcw, Keyboard, Activity, Brain, Volume2, FileText, AlertCircle } from 'lucide-react';
+import { Play, RotateCcw, Keyboard, Activity, Brain, Volume2, VolumeX, FileText, AlertCircle, Upload, FileUp } from 'lucide-react';
 
 import { LessonConfig, LessonMode, Stats } from './types';
 import { PRESET_LESSONS, CHAR_TO_KEY_MAP } from './constants';
@@ -24,6 +24,9 @@ const sanitizeText = (text: string): string => {
     .replace(/[\u201C\u201D]/g, '"') // Smart double quotes
     .replace(/[\u2013\u2014]/g, "-") // Dashes
     .replace(/…/g, "...")
+    // Convert Tabs to 2 spaces to avoid focus trapping and standardize layout
+    .replace(/\t/g, "  ")
+    .replace(/\r\n/g, "\n")
     // Normalize space characters
     .replace(/\u00A0/g, " ");
 };
@@ -33,6 +36,7 @@ const App: React.FC = () => {
   const [currentLesson, setCurrentLesson] = useState<LessonConfig | null>(null);
   const [text, setText] = useState<string>('');
   const [typedHistory, setTypedHistory] = useState<string>(''); // Tracks what user typed
+  const [isMuted, setIsMuted] = useState<boolean>(false);
   
   const [hasStarted, setHasStarted] = useState<boolean>(false);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
@@ -41,6 +45,10 @@ const App: React.FC = () => {
   // AI Generator State
   const [customTopic, setCustomTopic] = useState<string>('');
   const [customFormat, setCustomFormat] = useState<string>('Paragraph');
+
+  // Custom Input State
+  const [customInputText, setCustomInputText] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Error Tracking
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
@@ -92,6 +100,42 @@ const App: React.FC = () => {
     };
   }, [hasStarted, isCompleted, typedHistory]);
 
+  const toggleMute = () => {
+    const newState = !isMuted;
+    setIsMuted(newState);
+    audioService.setMuted(newState);
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        if (content) {
+          setCustomInputText(content);
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const startCustomInput = () => {
+    if (!customInputText.trim()) return;
+    
+    // Create a temporary lesson config
+    const lesson: LessonConfig = {
+      id: 'custom-input',
+      title: 'Custom Text / Code',
+      description: 'Your uploaded content',
+      mode: LessonMode.AI_CUSTOM // Reuse AI mode logic for custom handling
+    };
+
+    // Preset the text state so startLesson uses it
+    setText(sanitizeText(customInputText));
+    startLesson(lesson, true);
+  };
+
   const startLesson = async (lesson: LessonConfig, isRetry = false) => {
     setIsLoading(true);
     // Reset state immediately
@@ -105,8 +149,11 @@ const App: React.FC = () => {
 
     let lessonText = '';
 
-    // If AI mode, fetch content
-    if (lesson.mode === LessonMode.AI_CUSTOM) {
+    if (lesson.id === 'custom-input' && customInputText) {
+        // Use the text we already set or from the custom input area
+        lessonText = customInputText;
+    } else if (lesson.mode === LessonMode.AI_CUSTOM) {
+      // AI Mode
       try {
         if (!isRetry || !text) {
              lessonText = await generateLessonContent(customTopic || 'technology', customFormat);
@@ -117,6 +164,7 @@ const App: React.FC = () => {
         lessonText = "Error loading content. Please try again.";
       }
     } else {
+      // Preset Mode
       if (isRetry && text) {
           lessonText = text;
       } else {
@@ -139,7 +187,12 @@ const App: React.FC = () => {
   
   const newRandomLesson = () => {
       if (currentLesson) {
-          startLesson(currentLesson, false);
+          if (currentLesson.id === 'custom-input') {
+              // Can't generate random for custom input, just reset
+              resetLesson();
+          } else {
+              startLesson(currentLesson, false);
+          }
       }
   }
 
@@ -148,6 +201,13 @@ const App: React.FC = () => {
 
     // Ignore modifiers
     if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta' || e.key === 'CapsLock') return;
+
+    // Prevent default scrolling/tabbing behavior if we are in practice mode
+    if (['Tab', ' '].includes(e.key)) {
+        e.preventDefault();
+    }
+    // Prevent Enter from scrolling if applicable (rare but safe)
+    if (e.key === 'Enter') e.preventDefault();
 
     if (!hasStarted) {
       setHasStarted(true);
@@ -162,14 +222,28 @@ const App: React.FC = () => {
        return;
     }
 
-    // Handle standard typing
-    // We allow any single char key press to advance the cursor (Flow Typing)
-    if (e.key.length === 1) {
-      const targetChar = text[currentIndex];
-      const isCorrect = e.key === targetChar;
+    // Handle Typing
+    const targetChar = text[currentIndex];
+    
+    // Check if key matches target
+    // Special handling for Enter key vs \n char
+    let isCorrect = false;
+    let isTypingKey = false;
 
+    if (e.key === 'Enter' && targetChar === '\n') {
+        isCorrect = true;
+        isTypingKey = true;
+    } else if (e.key.length === 1) {
+        // Standard char
+        isTypingKey = true;
+        isCorrect = e.key === targetChar;
+    }
+
+    if (isTypingKey) {
       // Update history
-      const newHistory = typedHistory + e.key;
+      // If it was Enter, we store \n in history to match text
+      const charToAdd = (e.key === 'Enter' && targetChar === '\n') ? '\n' : e.key;
+      const newHistory = typedHistory + charToAdd;
       setTypedHistory(newHistory);
       
       // Calculate Stats
@@ -182,7 +256,7 @@ const App: React.FC = () => {
         audioService.playError();
         // Log mistake
         setMistakes(prev => [...prev, {
-            expected: targetChar === ' ' ? 'Space' : targetChar,
+            expected: targetChar === ' ' ? 'Space' : targetChar === '\n' ? 'Enter' : targetChar,
             actual: e.key,
             index: currentIndex
         }]);
@@ -191,8 +265,7 @@ const App: React.FC = () => {
       // Update global stats
       setStats(prev => {
         const newErrors = isCorrect ? prev.errors : prev.errors + 1;
-        // Accuracy = correct chars / total chars typed
-        // Simple approximation: 
+        // Accuracy
         const accuracy = Math.round(((nextIndex - newErrors) / nextIndex) * 100);
         return { ...prev, errors: newErrors, accuracy: Math.max(0, accuracy), progress };
       });
@@ -218,13 +291,23 @@ const App: React.FC = () => {
   // -- RENDER HELPERS --
 
   const renderMenu = () => (
-    <div className="max-w-5xl mx-auto px-4 py-12">
+    <div className="max-w-6xl mx-auto px-4 py-12 relative">
+      <div className="absolute top-4 right-4">
+         <button 
+           onClick={toggleMute}
+           className="p-3 bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full transition-colors border border-slate-700/50 backdrop-blur-sm shadow-lg group"
+           title={isMuted ? "Unmute" : "Mute"}
+         >
+           {isMuted ? <VolumeX size={20} className="group-hover:scale-110 transition-transform"/> : <Volume2 size={20} className="group-hover:scale-110 transition-transform"/>}
+         </button>
+      </div>
+
       <div className="text-center mb-16">
         <h1 className="text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-4 tracking-tight">
           TypeMaster AI
         </h1>
         <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-          Elevate your typing speed with intelligent, adaptive lessons. 
+          Elevate your typing speed with intelligent lessons, code practice, and custom texts. 
         </p>
       </div>
 
@@ -245,30 +328,28 @@ const App: React.FC = () => {
         ))}
 
         {/* AI Custom Card */}
-        <div className="group relative p-6 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-indigo-500/30 hover:border-indigo-500 transition-all duration-300 text-left shadow-lg col-span-1 md:col-span-2 lg:col-span-1">
+        <div className="group relative p-6 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-indigo-500/30 hover:border-indigo-500 transition-all duration-300 text-left shadow-lg">
            <div className="absolute top-0 right-0 p-3">
              <Brain className="text-indigo-400" size={24} />
            </div>
-           <h3 className="text-xl font-bold text-white mb-2">AI Document Generator</h3>
-           <p className="text-slate-400 text-sm mb-4">Generate custom letters, stories, or code to practice.</p>
+           <h3 className="text-xl font-bold text-white mb-2">AI Generator</h3>
+           <p className="text-slate-400 text-sm mb-4">Generate custom code or stories.</p>
            
            <div className="flex flex-col gap-3">
              <div className="flex gap-2">
                 <select 
                     value={customFormat}
                     onChange={(e) => setCustomFormat(e.target.value)}
-                    className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+                    className="w-1/3 bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
                 >
-                    <option value="Paragraph">Paragraph</option>
+                    <option value="Paragraph">Text</option>
+                    <option value="Code (Python)">Python</option>
+                    <option value="Code (JS)">JS</option>
                     <option value="Story">Story</option>
-                    <option value="Business Letter">Business Letter</option>
-                    <option value="Abstract">Abstract</option>
-                    <option value="Code (Python)">Code (Python)</option>
-                    <option value="Code (JS)">Code (JS)</option>
                 </select>
                 <input 
                   type="text" 
-                  placeholder="Topic (e.g. Space, React)" 
+                  placeholder="Topic..." 
                   className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                   value={customTopic}
                   onChange={(e) => setCustomTopic(e.target.value)}
@@ -279,10 +360,53 @@ const App: React.FC = () => {
                onClick={() => startLesson({ id: 'custom', title: `AI: ${customFormat}`, description: customTopic, mode: LessonMode.AI_CUSTOM }, false)}
                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
              >
-               <FileText size={16} /> Generate & Start
+               <Brain size={16} /> Generate
              </button>
            </div>
         </div>
+
+        {/* Upload / Paste Card */}
+        <div className="group relative p-6 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-emerald-500/30 hover:border-emerald-500 transition-all duration-300 text-left shadow-lg">
+           <div className="absolute top-0 right-0 p-3">
+             <FileUp className="text-emerald-400" size={24} />
+           </div>
+           <h3 className="text-xl font-bold text-white mb-2">Your Content</h3>
+           <p className="text-slate-400 text-sm mb-4">Practice your own code or documents.</p>
+           
+           <div className="flex flex-col gap-3">
+              <input 
+                 type="file" 
+                 ref={fileInputRef}
+                 className="hidden"
+                 accept=".txt,.js,.ts,.py,.html,.css,.json,.md"
+                 onChange={handleFileUpload}
+              />
+              <textarea 
+                 value={customInputText}
+                 onChange={(e) => setCustomInputText(e.target.value)}
+                 onKeyDown={(e) => e.stopPropagation()}
+                 placeholder="Paste text/code here or upload file..."
+                 className="w-full h-16 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500 resize-none font-mono"
+              />
+             <div className="flex gap-2">
+               <button 
+                 onClick={() => fileInputRef.current?.click()}
+                 className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                 title="Upload File"
+               >
+                 <Upload size={14} /> Upload
+               </button>
+               <button 
+                 onClick={startCustomInput}
+                 disabled={!customInputText.trim()}
+                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+               >
+                 <Play size={14} /> Start
+               </button>
+             </div>
+           </div>
+        </div>
+
       </div>
     </div>
   );
@@ -311,6 +435,13 @@ const App: React.FC = () => {
         </div>
         <div className="flex gap-2">
             <button 
+              onClick={toggleMute}
+              className="text-slate-400 hover:text-indigo-400 transition-colors p-2 rounded hover:bg-slate-800"
+              title={isMuted ? "Unmute" : "Mute"}
+            >
+              {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+            </button>
+            <button 
             onClick={resetLesson}
             className="text-slate-400 hover:text-blue-400 transition-colors p-2 rounded hover:bg-slate-800"
             title="Retry Same Text"
@@ -319,8 +450,9 @@ const App: React.FC = () => {
             </button>
             <button 
             onClick={newRandomLesson}
-            className="text-slate-400 hover:text-green-400 transition-colors p-2 rounded hover:bg-slate-800"
+            className={`text-slate-400 hover:text-green-400 transition-colors p-2 rounded hover:bg-slate-800 ${currentLesson?.id === 'custom-input' ? 'opacity-50 cursor-not-allowed' : ''}`}
             title="New Random Text"
+            disabled={currentLesson?.id === 'custom-input'}
             >
             <Brain size={20} />
             </button>
@@ -389,11 +521,11 @@ const App: React.FC = () => {
                        </span>
                        <div className="flex items-center gap-3">
                          <span className="text-emerald-400 font-mono font-bold bg-emerald-900/30 px-2 rounded">
-                           Expected: "{m.expected}"
+                           Expected: "{m.expected === '\n' ? '↵' : m.expected}"
                          </span>
                          <span className="text-slate-600">&rarr;</span>
                          <span className="text-red-400 font-mono font-bold bg-red-900/30 px-2 rounded">
-                           Typed: "{m.actual}"
+                           Typed: "{m.actual === 'Enter' ? '↵' : m.actual}"
                          </span>
                        </div>
                      </div>
@@ -411,7 +543,7 @@ const App: React.FC = () => {
               </button>
               <button 
                 onClick={newRandomLesson}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                className={`flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 ${currentLesson?.id === 'custom-input' ? 'hidden' : ''}`}
               >
                 <Brain size={18} /> New Random
               </button>

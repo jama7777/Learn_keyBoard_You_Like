@@ -14,19 +14,19 @@ export const generateLessonContent = async (topic: string, format: string = 'Par
     
     switch (format) {
       case 'Story':
-        typeInstruction = 'Write a short, engaging creative story.';
+        typeInstruction = 'Write a short, engaging creative story. Use paragraphs.';
         break;
       case 'Business Letter':
-        typeInstruction = 'Write a professional formal letter structure (skip address blocks, just body).';
+        typeInstruction = 'Write a professional formal letter structure (skip address blocks, just body). Preserve standard letter spacing.';
         break;
       case 'Abstract':
         typeInstruction = 'Write a dense, academic abstract style paragraph.';
         break;
       case 'Code (Python)':
-        typeInstruction = 'Write valid Python code snippet with comments. Do not use markdown backticks.';
+        typeInstruction = 'Write valid Python code snippet with comments. Preserve indentation and newlines. Do not use markdown backticks.';
         break;
       case 'Code (JS)':
-        typeInstruction = 'Write valid JavaScript code snippet with comments. Do not use markdown backticks.';
+        typeInstruction = 'Write valid JavaScript code snippet with comments. Preserve indentation and newlines. Do not use markdown backticks.';
         break;
       default:
         typeInstruction = 'Generate a plain text paragraph.';
@@ -36,12 +36,11 @@ export const generateLessonContent = async (topic: string, format: string = 'Par
       Task: ${typeInstruction}
       Topic: ${topic}.
       Difficulty: Intermediate.
-      Length: About 40-60 words.
+      Length: About 40-60 words (or lines for code).
       Requirements:
       - Use proper punctuation and capitalization.
       - No markdown formatting (no bold, no italics, no code blocks/backticks).
       - Just raw text that is ready to be typed.
-      - Single spacing.
     `;
 
     const response = await ai.models.generateContent({
@@ -51,10 +50,11 @@ export const generateLessonContent = async (topic: string, format: string = 'Par
 
     const text = response.text?.trim() || '';
     
-    // Clean up markdown if present
-    let cleanText = text.replace(/```/g, '').replace(/\n/g, ' ').replace(/\s+/g, ' ');
+    // Clean up markdown code fences if present (Gemini sometimes adds them despite instructions)
+    let cleanText = text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
 
-    return cleanText;
+    // We do NOT replace newlines with spaces anymore, to support code/structured text.
+    return cleanText.trim();
 
   } catch (error) {
     console.error("Gemini generation error:", error);
