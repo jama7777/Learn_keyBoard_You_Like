@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, RotateCcw, Keyboard, Activity, Brain, Volume2, VolumeX, FileText, AlertCircle, Upload, FileUp } from 'lucide-react';
+import { Play, RotateCcw, Keyboard, Activity, Brain, Volume2, VolumeX, FileText, AlertCircle, Upload, FileUp, Loader2 } from 'lucide-react';
 
 import { LessonConfig, LessonMode, Stats } from './types';
 import { PRESET_LESSONS, CHAR_TO_KEY_MAP } from './constants';
 import { audioService } from './services/audioService';
-import { generateLessonContent } from './services/geminiService';
+import { generateLessonContent, processFileContent } from './services/geminiService';
 import { generateLessonText } from './services/lessonGenerator';
 
 import VirtualKeyboard from './components/VirtualKeyboard';
@@ -41,6 +41,7 @@ const App: React.FC = () => {
   const [hasStarted, setHasStarted] = useState<boolean>(false);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isFileProcessing, setIsFileProcessing] = useState<boolean>(false);
   
   // AI Generator State
   const [customTopic, setCustomTopic] = useState<string>('');
@@ -106,17 +107,43 @@ const App: React.FC = () => {
     audioService.setMuted(newState);
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    // Reset current text
+    setCustomInputText('');
+    
+    // Check if it is a simple text file that we can read directly
+    const simpleTextTypes = ['text/plain', 'text/html', 'text/javascript', 'application/json', 'text/markdown', 'application/x-typescript'];
+    const isSimpleText = simpleTextTypes.some(type => file.type.includes(type)) || file.name.endsWith('.ts') || file.name.endsWith('.tsx') || file.name.endsWith('.py');
+
+    if (isSimpleText) {
       const reader = new FileReader();
       reader.onload = (e) => {
         const content = e.target?.result as string;
-        if (content) {
-          setCustomInputText(content);
-        }
+        if (content) setCustomInputText(content);
       };
       reader.readAsText(file);
+    } else {
+      // It's likely an Image or PDF, use Gemini to transcribe
+      setIsFileProcessing(true);
+      try {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const base64Data = e.target?.result as string;
+          if (base64Data) {
+             const extractedText = await processFileContent(base64Data, file.type);
+             setCustomInputText(extractedText);
+          }
+          setIsFileProcessing(false);
+        };
+        reader.readAsDataURL(file);
+      } catch (err) {
+        console.error(err);
+        setCustomInputText("Error processing file.");
+        setIsFileProcessing(false);
+      }
     }
   };
 
@@ -195,6 +222,16 @@ const App: React.FC = () => {
           }
       }
   }
+
+  const handleBackToMenu = () => {
+    if (typedHistory.length > 0 && !isCompleted) {
+        // If user has started typing but hasn't finished, show summary
+        setIsCompleted(true);
+    } else {
+        // Otherwise (hasn't started typing or just viewing), go back immediately
+        setCurrentLesson(null);
+    }
+  };
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!currentLesson || isCompleted || isLoading) return;
@@ -371,34 +408,43 @@ const App: React.FC = () => {
              <FileUp className="text-emerald-400" size={24} />
            </div>
            <h3 className="text-xl font-bold text-white mb-2">Your Content</h3>
-           <p className="text-slate-400 text-sm mb-4">Practice your own code or documents.</p>
+           <p className="text-slate-400 text-sm mb-4">Upload Code, PDFs, Images, or Paste text.</p>
            
            <div className="flex flex-col gap-3">
               <input 
                  type="file" 
                  ref={fileInputRef}
                  className="hidden"
-                 accept=".txt,.js,.ts,.py,.html,.css,.json,.md"
+                 accept=".txt,.js,.ts,.py,.html,.css,.json,.md,.pdf,.png,.jpg,.jpeg,.webp"
                  onChange={handleFileUpload}
               />
-              <textarea 
-                 value={customInputText}
-                 onChange={(e) => setCustomInputText(e.target.value)}
-                 onKeyDown={(e) => e.stopPropagation()}
-                 placeholder="Paste text/code here or upload file..."
-                 className="w-full h-16 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500 resize-none font-mono"
-              />
+              <div className="relative">
+                <textarea 
+                   value={customInputText}
+                   onChange={(e) => setCustomInputText(e.target.value)}
+                   onKeyDown={(e) => e.stopPropagation()}
+                   placeholder={isFileProcessing ? "Extracting text from document..." : "Paste text or upload file..."}
+                   disabled={isFileProcessing}
+                   className="w-full h-16 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500 resize-none font-mono disabled:opacity-50"
+                />
+                {isFileProcessing && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-[1px] rounded-lg">
+                     <Loader2 className="animate-spin text-emerald-400" size={24} />
+                  </div>
+                )}
+              </div>
              <div className="flex gap-2">
                <button 
                  onClick={() => fileInputRef.current?.click()}
-                 className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                 disabled={isFileProcessing}
+                 className="flex-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                  title="Upload File"
                >
                  <Upload size={14} /> Upload
                </button>
                <button 
                  onClick={startCustomInput}
-                 disabled={!customInputText.trim()}
+                 disabled={!customInputText.trim() || isFileProcessing}
                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
                >
                  <Play size={14} /> Start
@@ -416,7 +462,7 @@ const App: React.FC = () => {
       {/* Header / Nav */}
       <div className="w-full flex justify-between items-center mb-8">
         <button 
-          onClick={() => setCurrentLesson(null)}
+          onClick={handleBackToMenu}
           className="text-slate-400 hover:text-white flex items-center gap-2 transition-colors"
         >
           &larr; Back to Menu
@@ -486,7 +532,9 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl p-8 max-w-2xl w-full shadow-2xl transform scale-100 transition-all flex flex-col max-h-[90vh]">
             <div className="text-center mb-6">
-              <h2 className="text-3xl font-bold text-white mb-2">Lesson Complete! 🎉</h2>
+              <h2 className="text-3xl font-bold text-white mb-2">
+                {typedHistory.length === text.length ? "Lesson Complete! 🎉" : "Session Summary"}
+              </h2>
               <p className="text-slate-400">{currentLesson?.title}</p>
             </div>
             
@@ -509,6 +557,7 @@ const App: React.FC = () => {
                {mistakes.length === 0 ? (
                  <div className="text-emerald-400 text-center py-4 font-medium">
                    Perfect! Zero mistakes. You are a machine! 🤖
+                   {typedHistory.length !== text.length && <span className="block text-xs text-emerald-600 mt-1">(so far)</span>}
                  </div>
                ) : (
                  <div className="space-y-2">
