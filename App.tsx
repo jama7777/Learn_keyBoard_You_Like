@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, RotateCcw, Keyboard, Activity, Brain, Volume2, VolumeX, FileText, AlertCircle, Upload, FileUp, Loader2 } from 'lucide-react';
+import { Play, RotateCcw, Keyboard, Activity, Brain, Volume2, VolumeX, FileText, AlertCircle, Upload, FileUp, Loader2, History, Trash2, Clock, X, Cloud, CloudLightning, LogOut, CheckCircle2, Wand2, Sparkles, Music, Music2, Mic2, Plus, FileAudio } from 'lucide-react';
 
-import { LessonConfig, LessonMode, Stats } from './types';
-import { PRESET_LESSONS, CHAR_TO_KEY_MAP } from './constants';
+import { LessonConfig, LessonMode, Stats, Song } from './types';
+import { PRESET_LESSONS, CHAR_TO_KEY_MAP, PRESET_SONGS } from './constants';
 import { audioService } from './services/audioService';
-import { generateLessonContent, processFileContent } from './services/geminiService';
+import { generateLessonContent, processFileContent, fixGrammar, generateSong, extractMelodyFromAudio } from './services/geminiService';
 import { generateLessonText } from './services/lessonGenerator';
+import { historyService, SearchHistoryItem } from './services/historyService';
+import { cloudService } from './services/cloudService';
 
 import VirtualKeyboard from './components/VirtualKeyboard';
 import Hands from './components/Hands';
@@ -43,13 +45,31 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isFileProcessing, setIsFileProcessing] = useState<boolean>(false);
   
-  // AI Generator State
+  // AI Generator & Cloud State
   const [customTopic, setCustomTopic] = useState<string>('');
   const [customFormat, setCustomFormat] = useState<string>('Paragraph');
+  const [customMusicVibe, setCustomMusicVibe] = useState<string>(''); // New state for music input
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
+  
+  // Cloud Auth
+  const [cloudUser, setCloudUser] = useState<string | null>(null);
+  const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
+  const [loginInput, setLoginInput] = useState<string>('');
+  const [isCloudLoading, setIsCloudLoading] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Custom Input State
   const [customInputText, setCustomInputText] = useState<string>('');
+  const [isAutoFixing, setIsAutoFixing] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+
+  // Music State
+  const [showMusicModal, setShowMusicModal] = useState<boolean>(false);
+  const [activeSong, setActiveSong] = useState<Song | null>(null);
+  const [songPrompt, setSongPrompt] = useState<string>('');
+  const [isGeneratingSong, setIsGeneratingSong] = useState<boolean>(false);
 
   // Error Tracking
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
@@ -72,6 +92,7 @@ const App: React.FC = () => {
   // Initialize Audio Context on first interaction
   useEffect(() => {
     const unlockAudio = () => {
+      // Small silent click to unlock audio context
       audioService.playClick(); 
       window.removeEventListener('click', unlockAudio);
       window.removeEventListener('keydown', unlockAudio);
@@ -83,6 +104,37 @@ const App: React.FC = () => {
       window.removeEventListener('keydown', unlockAudio);
     };
   }, []);
+
+  // Load Local History on Mount (if not logged in)
+  useEffect(() => {
+    if (!cloudUser) {
+      setSearchHistory(historyService.getHistory());
+    }
+  }, [cloudUser]);
+
+  // Dynamic Auto-Correction Effect
+  useEffect(() => {
+    // Only run if text exists, is substantial, and not currently processing something else
+    if (!customInputText || customInputText.length < 5 || isFileProcessing || isLoading) return;
+
+    const timeoutId = setTimeout(async () => {
+      setIsAutoFixing(true);
+      try {
+        const fixedText = await fixGrammar(customInputText);
+        // Only update if the text has actually changed (avoids cursor jumps on valid text)
+        // We trim to ensure we don't fix just trailing whitespace differences aggressively
+        if (fixedText && fixedText.trim() !== customInputText.trim()) {
+           setCustomInputText(fixedText);
+        }
+      } catch (err) {
+        console.error("Auto-fix failed", err);
+      } finally {
+        setIsAutoFixing(false);
+      }
+    }, 2000); // 2 second pause trigger
+
+    return () => clearTimeout(timeoutId);
+  }, [customInputText, isFileProcessing, isLoading]);
 
   // Timer for WPM
   useEffect(() => {
@@ -105,6 +157,30 @@ const App: React.FC = () => {
     const newState = !isMuted;
     setIsMuted(newState);
     audioService.setMuted(newState);
+  };
+
+  const handleCloudLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginInput.trim()) return;
+    
+    setIsCloudLoading(true);
+    try {
+        const username = loginInput.trim();
+        const history = await cloudService.connect(username);
+        setCloudUser(username);
+        setSearchHistory(history);
+        setShowLoginModal(false);
+        setLoginInput('');
+    } catch (err) {
+        console.error("Login failed", err);
+    } finally {
+        setIsCloudLoading(false);
+    }
+  };
+
+  const handleCloudLogout = () => {
+      setCloudUser(null);
+      setSearchHistory(historyService.getHistory()); // Revert to local
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -146,6 +222,54 @@ const App: React.FC = () => {
       }
     }
   };
+  
+  const handleAudioUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setCustomMusicVibe(`Uploading: ${file.name}...`);
+    setIsLoading(true);
+    
+    try {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const base64Data = e.target?.result as string;
+            if (base64Data) {
+               // Use a separate helper to not block the text generation
+               const song = await extractMelodyFromAudio(base64Data, file.type);
+               if (song) {
+                   setActiveSong(song);
+                   setCustomMusicVibe(song.title);
+               } else {
+                   setCustomMusicVibe("Failed to process audio.");
+               }
+            }
+            setIsLoading(false);
+        };
+        reader.readAsDataURL(file);
+    } catch (err) {
+        console.error(err);
+        setCustomMusicVibe("Error uploading audio.");
+        setIsLoading(false);
+    }
+  };
+
+  const handleSongGeneration = async () => {
+      if (!songPrompt.trim()) return;
+      setIsGeneratingSong(true);
+      try {
+          const newSong = await generateSong(songPrompt);
+          if (newSong) {
+              setActiveSong(newSong);
+              setShowMusicModal(false);
+              setSongPrompt('');
+          }
+      } catch (err) {
+          console.error("Song generation failed", err);
+      } finally {
+          setIsGeneratingSong(false);
+      }
+  };
 
   const startCustomInput = () => {
     if (!customInputText.trim()) return;
@@ -163,6 +287,79 @@ const App: React.FC = () => {
     startLesson(lesson, true);
   };
 
+  // Unified Handler for creating a session with custom text AND optional music
+  const handleCreateCustomSession = async () => {
+    if (!customTopic.trim() && !customMusicVibe.trim() && !activeSong) return;
+
+    const topic = customTopic.trim() || 'Interesting facts';
+    
+    setIsLoading(true);
+
+    try {
+        // Parallel generation: Text and Song
+        // If user already uploaded a song (activeSong exists) we don't regenerate unless they changed the vibe text
+        const shouldGenerateSong = customMusicVibe.trim() && (!activeSong || activeSong.title !== customMusicVibe);
+        
+        const promises: [Promise<string>, Promise<Song | null>] = [
+            generateLessonContent(topic, customFormat),
+            shouldGenerateSong ? generateSong(customMusicVibe.trim()) : Promise.resolve(null)
+        ];
+
+        const [generatedText, generatedSongResult] = await Promise.all(promises);
+
+        // Update Music
+        if (generatedSongResult) {
+            setActiveSong(generatedSongResult);
+        } else if (!activeSong && customMusicVibe.trim()) {
+            // Fallback if song gen fails but was requested
+            setActiveSong(PRESET_SONGS[0]); 
+        }
+
+        // Save History (Local + Cloud)
+        if (customTopic) {
+             const newItem: SearchHistoryItem = {
+                 id: Date.now().toString(),
+                 topic: topic,
+                 format: customFormat,
+                 timestamp: Date.now()
+             };
+             
+             setSearchHistory(prev => [newItem, ...prev.filter(i => i.topic !== newItem.topic || i.format !== newItem.format)].slice(0,20));
+
+             if (cloudUser) {
+                setIsSyncing(true);
+                cloudService.uploadItem(cloudUser, newItem).then(() => setIsSyncing(false));
+             } else {
+                historyService.addToHistory(topic, customFormat);
+             }
+        }
+
+        // Start Lesson
+        const lesson: LessonConfig = {
+            id: 'custom-ai',
+            title: customFormat === 'Code (Python)' ? 'Python Drill' : 'AI Session',
+            description: topic,
+            mode: LessonMode.AI_CUSTOM
+        };
+
+        // Reset state
+        setTypedHistory('');
+        setStats({ wpm: 0, accuracy: 100, errors: 0, progress: 0, timeElapsed: 0 });
+        setMistakes([]); 
+        setHasStarted(false);
+        setIsCompleted(false);
+        // Do NOT reset song index here conceptually, but since we restart typing, we start from 0 index text.
+        startTimeRef.current = null;
+        setCurrentLesson(lesson);
+        setText(sanitizeText(generatedText || "Error loading content."));
+
+    } catch (err) {
+        console.error("Session generation failed", err);
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
   const startLesson = async (lesson: LessonConfig, isRetry = false) => {
     setIsLoading(true);
     // Reset state immediately
@@ -171,6 +368,7 @@ const App: React.FC = () => {
     setMistakes([]); 
     setHasStarted(false);
     setIsCompleted(false);
+    // Song index resets because it's tied to typedHistory.length implicitly now
     startTimeRef.current = null;
     setCurrentLesson(lesson);
 
@@ -180,9 +378,12 @@ const App: React.FC = () => {
         // Use the text we already set or from the custom input area
         lessonText = customInputText;
     } else if (lesson.mode === LessonMode.AI_CUSTOM) {
-      // AI Mode
+      // AI Mode via Quick Start buttons (re-using old logic if needed, but mostly superseded by custom session handler)
+       // This branch might be hit if we "retry" an AI lesson
       try {
         if (!isRetry || !text) {
+            // If we are here, it's likely a retry or direct call without content
+            // We'll just generate text again if needed
              lessonText = await generateLessonContent(customTopic || 'technology', customFormat);
         } else {
              lessonText = text;
@@ -230,6 +431,28 @@ const App: React.FC = () => {
     } else {
         // Otherwise (hasn't started typing or just viewing), go back immediately
         setCurrentLesson(null);
+    }
+  };
+
+  // Helper to use history item
+  const useHistoryItem = (item: SearchHistoryItem) => {
+    setCustomTopic(item.topic);
+    setCustomFormat(item.format);
+    setShowHistory(false);
+  };
+
+  // Helper to delete history item
+  const deleteHistoryItem = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    // Optimistic UI update
+    setSearchHistory(prev => prev.filter(i => i.id !== id));
+    
+    if (cloudUser) {
+        setIsSyncing(true);
+        cloudService.deleteItem(cloudUser, id).then(() => setIsSyncing(false));
+    } else {
+        const updated = historyService.deleteItem(id);
+        setSearchHistory(updated);
     }
   };
 
@@ -287,10 +510,28 @@ const App: React.FC = () => {
       const nextIndex = currentIndex + 1;
       const progress = Math.round((nextIndex / text.length) * 100);
 
-      if (isCorrect) {
-        audioService.playClick();
+      // Play Sound Logic
+      // Key Change: Note index is tied to the text index (currentIndex).
+      // If correct: Play note at current index.
+      // If wrong: Play error (Skip the note that belonged to this index).
+      if (activeSong && activeSong.notes.length > 0) {
+         const noteIndex = currentIndex % activeSong.notes.length;
+         if (isCorrect) {
+             audioService.playTone(activeSong.notes[noteIndex]);
+         } else {
+             // "Skip that sound": We play error instead of the melody note.
+             audioService.playError();
+         }
       } else {
-        audioService.playError();
+         // No song active, just click or clack
+         if (isCorrect) {
+             audioService.playClick();
+         } else {
+             audioService.playError();
+         }
+      }
+
+      if (!isCorrect) {
         // Log mistake
         setMistakes(prev => [...prev, {
             expected: targetChar === ' ' ? 'Space' : targetChar === '\n' ? 'Enter' : targetChar,
@@ -310,10 +551,17 @@ const App: React.FC = () => {
       // Completion Check
       if (nextIndex >= text.length) {
         setIsCompleted(true);
-        audioService.playClick(); // Celebration sound
+        // Play a simple completion flourish if music mode
+        if (activeSong) {
+            setTimeout(() => audioService.playTone(523.25), 200); // C5
+            setTimeout(() => audioService.playTone(659.25), 400); // E5
+            setTimeout(() => audioService.playTone(783.99), 600); // G5
+        } else {
+            audioService.playClick(); 
+        }
       }
     }
-  }, [currentLesson, isCompleted, isLoading, text, currentIndex, hasStarted, typedHistory]);
+  }, [currentLesson, isCompleted, isLoading, text, currentIndex, hasStarted, typedHistory, activeSong]); // removed currentNoteIndex dep
 
   // Global Key Listener
   useEffect(() => {
@@ -329,7 +577,41 @@ const App: React.FC = () => {
 
   const renderMenu = () => (
     <div className="max-w-6xl mx-auto px-4 py-12 relative">
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-4 right-4 flex gap-2">
+         {cloudUser ? (
+             <div className="flex items-center gap-2 bg-slate-800/80 px-3 py-2 rounded-full border border-indigo-500/30">
+                 <div className="flex items-center gap-1.5 text-indigo-400">
+                    {isSyncing ? <Loader2 size={16} className="animate-spin"/> : <CloudLightning size={16} />}
+                    <span className="text-xs font-bold font-mono uppercase tracking-wide">{cloudUser}</span>
+                 </div>
+                 <div className="w-px h-4 bg-slate-700 mx-1" />
+                 <button 
+                   onClick={handleCloudLogout}
+                   className="text-slate-400 hover:text-red-400 transition-colors"
+                   title="Logout"
+                 >
+                   <LogOut size={16} />
+                 </button>
+             </div>
+         ) : (
+            <button 
+                onClick={() => setShowLoginModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full transition-colors border border-slate-700/50 backdrop-blur-sm text-sm font-medium group"
+            >
+                <Cloud size={18} className="text-slate-500 group-hover:text-indigo-400 transition-colors"/>
+                <span>Cloud Sync</span>
+            </button>
+         )}
+         
+         <button 
+            onClick={() => setShowMusicModal(true)}
+            className={`p-3 bg-slate-800/50 hover:bg-slate-700 rounded-full transition-colors border border-slate-700/50 backdrop-blur-sm shadow-lg group relative ${activeSong ? 'text-pink-400 border-pink-500/50' : 'text-slate-400 hover:text-white'}`}
+            title="Music Settings"
+         >
+             {activeSong ? <Music2 size={20} className="animate-pulse" /> : <Music size={20} className="group-hover:scale-110 transition-transform" />}
+             {activeSong && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-pink-500 rounded-full"></span>}
+         </button>
+
          <button 
            onClick={toggleMute}
            className="p-3 bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full transition-colors border border-slate-700/50 backdrop-blur-sm shadow-lg group"
@@ -365,50 +647,129 @@ const App: React.FC = () => {
         ))}
 
         {/* AI Custom Card */}
-        <div className="group relative p-6 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-indigo-500/30 hover:border-indigo-500 transition-all duration-300 text-left shadow-lg">
-           <div className="absolute top-0 right-0 p-3">
+        <div className="group relative p-6 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-indigo-500/30 hover:border-indigo-500 transition-all duration-300 text-left shadow-lg overflow-hidden">
+           <div className="absolute top-0 right-0 p-3 flex gap-2">
+             <button 
+               onClick={() => setShowHistory(!showHistory)} 
+               className={`p-1.5 rounded-full hover:bg-slate-700 transition-colors ${showHistory ? 'text-indigo-400 bg-slate-700' : 'text-slate-400'}`}
+               title="Search History"
+             >
+                {showHistory ? <X size={18} /> : <History size={18} />}
+             </button>
              <Brain className="text-indigo-400" size={24} />
            </div>
-           <h3 className="text-xl font-bold text-white mb-2">AI Generator</h3>
-           <p className="text-slate-400 text-sm mb-4">Generate custom code or stories.</p>
            
-           <div className="flex flex-col gap-3">
-             <div className="flex gap-2">
-                <select 
-                    value={customFormat}
-                    onChange={(e) => setCustomFormat(e.target.value)}
-                    className="w-1/3 bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
-                >
-                    <option value="Paragraph">Text</option>
-                    <option value="Code (Python)">Python</option>
-                    <option value="Code (JS)">JS</option>
-                    <option value="Story">Story</option>
-                </select>
-                <input 
-                  type="text" 
-                  placeholder="Topic..." 
-                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-                  value={customTopic}
-                  onChange={(e) => setCustomTopic(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()} 
-                />
-             </div>
-             <button 
-               onClick={() => startLesson({ id: 'custom', title: `AI: ${customFormat}`, description: customTopic, mode: LessonMode.AI_CUSTOM }, false)}
-               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-             >
-               <Brain size={16} /> Generate
-             </button>
-           </div>
+           <h3 className="text-xl font-bold text-white mb-2">Custom Session</h3>
+           
+           {showHistory ? (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <p className="text-slate-400 text-sm mb-2 flex items-center gap-2">
+                    {cloudUser ? <CloudLightning size={14} className="text-indigo-400"/> : <Clock size={14} />} 
+                    {cloudUser ? `Cloud History` : `Recent Searches`}
+                    {isSyncing && <Loader2 size={12} className="animate-spin text-slate-500 ml-auto"/>}
+                </p>
+                <div className="h-40 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
+                    {searchHistory.length === 0 ? (
+                        <p className="text-xs text-slate-500 italic text-center py-4">
+                            {isCloudLoading ? "Syncing..." : "No history found."}
+                        </p>
+                    ) : (
+                        searchHistory.map(item => (
+                            <div 
+                                key={item.id} 
+                                onClick={() => useHistoryItem(item)}
+                                className="group/item flex items-center justify-between p-2 rounded bg-slate-950/50 border border-slate-700/50 hover:border-indigo-500/50 hover:bg-slate-950 cursor-pointer transition-all"
+                            >
+                                <div className="flex flex-col truncate pr-2">
+                                    <span className="text-sm text-slate-200 truncate font-medium">{item.topic}</span>
+                                    <span className="text-[10px] text-slate-500 uppercase">{item.format}</span>
+                                </div>
+                                <button 
+                                    onClick={(e) => deleteHistoryItem(e, item.id)}
+                                    className="text-slate-600 hover:text-red-400 p-1 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                                >
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
+                        ))
+                    )}
+                </div>
+              </div>
+           ) : (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <p className="text-slate-400 text-sm mb-4">Create your perfect practice session.</p>
+                <div className="flex flex-col gap-3">
+                    <input 
+                        type="text" 
+                        placeholder="What to type? (e.g. 'a,s,d,f' or 'Space')" 
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                        value={customTopic}
+                        onChange={(e) => setCustomTopic(e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                    />
+                    
+                    <div className="flex gap-2">
+                        <select 
+                            value={customFormat}
+                            onChange={(e) => setCustomFormat(e.target.value)}
+                            className="w-1/3 bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+                        >
+                            <option value="Paragraph">Text</option>
+                            <option value="Code (Python)">Python</option>
+                            <option value="Code (JS)">JS</option>
+                            <option value="Story">Story</option>
+                        </select>
+                         <div className="flex-1 relative">
+                            <input 
+                                type="text" 
+                                placeholder="Song Name or Vibe..." 
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-3 pr-8 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 truncate"
+                                value={customMusicVibe}
+                                onChange={(e) => setCustomMusicVibe(e.target.value)}
+                                onKeyDown={(e) => e.stopPropagation()} 
+                            />
+                            <button 
+                                onClick={() => audioInputRef.current?.click()}
+                                className="absolute right-1 top-1 p-1 hover:text-pink-400 text-slate-500 transition-colors"
+                                title="Upload Audio to Extract Melody"
+                            >
+                                <FileAudio size={14} />
+                            </button>
+                            <input 
+                                type="file" 
+                                ref={audioInputRef} 
+                                className="hidden" 
+                                accept="audio/*"
+                                onChange={handleAudioUpload}
+                            />
+                         </div>
+                    </div>
+                    
+                    <button 
+                        onClick={handleCreateCustomSession}
+                        disabled={isLoading}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                    >
+                        {isLoading ? <Loader2 size={16} className="animate-spin"/> : <Wand2 size={16} />}
+                        Create Session
+                    </button>
+                </div>
+              </div>
+           )}
         </div>
 
         {/* Upload / Paste Card */}
         <div className="group relative p-6 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-emerald-500/30 hover:border-emerald-500 transition-all duration-300 text-left shadow-lg">
-           <div className="absolute top-0 right-0 p-3">
+           <div className="absolute top-0 right-0 p-3 flex gap-2">
+             {isAutoFixing && (
+                <div className="flex items-center gap-1 text-xs text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-full animate-pulse">
+                    <Sparkles size={12} /> Auto-fixing
+                </div>
+             )}
              <FileUp className="text-emerald-400" size={24} />
            </div>
            <h3 className="text-xl font-bold text-white mb-2">Your Content</h3>
-           <p className="text-slate-400 text-sm mb-4">Upload Code, PDFs, Images, or Paste text.</p>
+           <p className="text-slate-400 text-sm mb-4">Type freely. AI will automatically fix grammar.</p>
            
            <div className="flex flex-col gap-3">
               <input 
@@ -423,9 +784,13 @@ const App: React.FC = () => {
                    value={customInputText}
                    onChange={(e) => setCustomInputText(e.target.value)}
                    onKeyDown={(e) => e.stopPropagation()}
-                   placeholder={isFileProcessing ? "Extracting text from document..." : "Paste text or upload file..."}
+                   placeholder={isFileProcessing ? "Processing..." : "Type or paste text..."}
                    disabled={isFileProcessing}
-                   className="w-full h-16 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500 resize-none font-mono disabled:opacity-50"
+                   className="w-full h-16 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500 resize-none font-mono disabled:opacity-50 transition-all duration-300"
+                   style={{
+                       borderColor: isAutoFixing ? '#6366f1' : undefined, // Indigo border when fixing
+                       boxShadow: isAutoFixing ? '0 0 10px rgba(99, 102, 241, 0.1)' : undefined
+                   }}
                 />
                 {isFileProcessing && (
                   <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-[1px] rounded-lg">
@@ -437,15 +802,15 @@ const App: React.FC = () => {
                <button 
                  onClick={() => fileInputRef.current?.click()}
                  disabled={isFileProcessing}
-                 className="flex-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                 className="px-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center"
                  title="Upload File"
                >
-                 <Upload size={14} /> Upload
+                 <Upload size={14} />
                </button>
                <button 
                  onClick={startCustomInput}
                  disabled={!customInputText.trim() || isFileProcessing}
-                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
                >
                  <Play size={14} /> Start
                </button>
@@ -454,6 +819,114 @@ const App: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Cloud Login Modal */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-200">
+                <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                    <Cloud className="text-indigo-400" size={24} /> 
+                    Connect Cloud
+                </h3>
+                <p className="text-slate-400 text-sm mb-4">
+                    Enter a Cloud ID to sync your AI search history across sessions on this device.
+                </p>
+                
+                <form onSubmit={handleCloudLogin} className="flex flex-col gap-3">
+                    <input 
+                        type="text"
+                        value={loginInput}
+                        onChange={(e) => setLoginInput(e.target.value)}
+                        placeholder="e.g. user123"
+                        autoFocus
+                        className="bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                    />
+                    <div className="flex gap-2 justify-end mt-2">
+                         <button 
+                            type="button" 
+                            onClick={() => setShowLoginModal(false)}
+                            className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="submit" 
+                            disabled={isCloudLoading || !loginInput.trim()}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                           {isCloudLoading ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
+                           Connect
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      )}
+
+      {/* Music Settings Modal */}
+      {showMusicModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in zoom-in-95 duration-200">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                          <Music className="text-pink-400" size={24} /> 
+                          Melody Typing
+                      </h3>
+                      <button onClick={() => setShowMusicModal(false)} className="text-slate-500 hover:text-white"><X size={20}/></button>
+                  </div>
+                  
+                  <p className="text-slate-400 text-sm mb-6">
+                      Every correct keystroke plays the next note of the song. Choose a melody or generate one!
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                      <button 
+                          onClick={() => setActiveSong(null)}
+                          className={`p-3 rounded-lg border text-sm font-medium transition-all ${activeSong === null ? 'bg-slate-700 border-white text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                      >
+                          🔇 No Melody (Clicks)
+                      </button>
+                      {PRESET_SONGS.map(song => (
+                          <button 
+                              key={song.id}
+                              onClick={() => setActiveSong(song)}
+                              className={`p-3 rounded-lg border text-sm font-medium transition-all ${activeSong?.id === song.id ? 'bg-pink-500/20 border-pink-500 text-pink-200' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-pink-500/50'}`}
+                          >
+                              🎵 {song.title}
+                          </button>
+                      ))}
+                  </div>
+                  
+                  <div className="border-t border-slate-800 pt-5">
+                      <label className="text-xs text-slate-400 font-bold uppercase tracking-wide block mb-2 flex items-center gap-2">
+                         <Sparkles size={12} className="text-indigo-400"/> AI Composer
+                      </label>
+                      <div className="flex gap-2">
+                          <input 
+                              type="text"
+                              value={songPrompt}
+                              onChange={(e) => setSongPrompt(e.target.value)}
+                              placeholder="e.g. 'A mysterious sad melody' or 'Upbeat 8-bit'"
+                              className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500 text-sm"
+                              onKeyDown={(e) => e.key === 'Enter' && handleSongGeneration()}
+                          />
+                          <button 
+                              onClick={handleSongGeneration}
+                              disabled={isGeneratingSong || !songPrompt.trim()}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                              {isGeneratingSong ? <Loader2 size={16} className="animate-spin"/> : <Wand2 size={16}/>}
+                          </button>
+                      </div>
+                      {activeSong && activeSong.id.startsWith('ai_') && (
+                          <div className="mt-3 p-2 bg-indigo-500/10 border border-indigo-500/30 rounded text-xs text-indigo-300 flex items-center gap-2">
+                              <Music2 size={14} /> Currently playing generated song: "{activeSong.title}"
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 
@@ -480,6 +953,11 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
+            {activeSong && (
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-pink-500/10 border border-pink-500/30 rounded-full text-xs text-pink-300 mr-2">
+                    <Music2 size={14} /> {activeSong.title}
+                </div>
+            )}
             <button 
               onClick={toggleMute}
               className="text-slate-400 hover:text-indigo-400 transition-colors p-2 rounded hover:bg-slate-800"
@@ -606,20 +1084,6 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-[#0f172a] text-slate-200">
-      {/* Background Ambience */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/10 rounded-full blur-[120px]" />
-         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[120px]" />
-      </div>
-
-      <div className="relative z-10">
-        {!currentLesson ? renderMenu() : renderPractice()}
-      </div>
     </div>
   );
 };

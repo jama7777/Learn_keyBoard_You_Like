@@ -1,4 +1,4 @@
-import { FingerName, KeyConfig, LessonMode } from './types';
+import { FingerName, KeyConfig, LessonMode, Song } from './types';
 
 // Finger Color Map for visual guidance
 export const FINGER_COLORS: Record<FingerName, string> = {
@@ -103,7 +103,7 @@ KEYBOARD_ROWS.forEach(row => {
          CHAR_TO_KEY_MAP[mainChar.toUpperCase()] = { code: key.code, finger: key.finger, shift: true };
     }
     
-    // Special Symbol mappings (Hardcoded for US Layout commonality)
+    // Special Symbol mappings
     if (key.label === '1') CHAR_TO_KEY_MAP['!'] = { code: key.code, finger: key.finger, shift: true };
     if (key.label === '2') CHAR_TO_KEY_MAP['@'] = { code: key.code, finger: key.finger, shift: true };
     if (key.label === '3') CHAR_TO_KEY_MAP['#'] = { code: key.code, finger: key.finger, shift: true };
@@ -126,7 +126,6 @@ KEYBOARD_ROWS.forEach(row => {
     if (key.label === '/') CHAR_TO_KEY_MAP['?'] = { code: key.code, finger: key.finger, shift: true };
   });
 });
-// Manually add space and newline
 CHAR_TO_KEY_MAP[' '] = { code: 'Space', finger: 'L_THUMB' };
 CHAR_TO_KEY_MAP['\n'] = { code: 'Enter', finger: 'R_PINKY' };
 
@@ -167,4 +166,51 @@ export const PRESET_LESSONS = [
     description: 'Real world sentences with everything.', 
     mode: LessonMode.ALL
   },
+];
+
+export const NOTE_FREQUENCIES: Record<string, number> = {
+  // Octave 3
+  'C3': 130.81, 'C#3': 138.59, 'D3': 146.83, 'D#3': 155.56, 'E3': 164.81, 'F3': 174.61, 'F#3': 185.00, 'G3': 196.00, 'G#3': 207.65, 'A3': 220.00, 'A#3': 233.08, 'B3': 246.94,
+  // Octave 4 (Middle C is C4)
+  'C4': 261.63, 'C#4': 277.18, 'D4': 293.66, 'D#4': 311.13, 'E4': 329.63, 'F4': 349.23, 'F#4': 369.99, 'G4': 392.00, 'G#4': 415.30, 'A4': 440.00, 'A#4': 466.16, 'B4': 493.88,
+  // Octave 5
+  'C5': 523.25, 'C#5': 554.37, 'D5': 587.33, 'D#5': 622.25, 'E5': 659.25, 'F5': 698.46, 'F#5': 739.99, 'G5': 783.99, 'G#5': 830.61, 'A5': 880.00, 'A#5': 932.33, 'B5': 987.77,
+  // Octave 6
+  'C6': 1046.50
+};
+
+export const PRESET_SONGS: Song[] = [
+  {
+    id: 'twinkle',
+    title: 'Twinkle Twinkle Little Star',
+    notes: [
+      NOTE_FREQUENCIES['C4'], NOTE_FREQUENCIES['C4'], NOTE_FREQUENCIES['G4'], NOTE_FREQUENCIES['G4'], NOTE_FREQUENCIES['A4'], NOTE_FREQUENCIES['A4'], NOTE_FREQUENCIES['G4'],
+      NOTE_FREQUENCIES['F4'], NOTE_FREQUENCIES['F4'], NOTE_FREQUENCIES['E4'], NOTE_FREQUENCIES['E4'], NOTE_FREQUENCIES['D4'], NOTE_FREQUENCIES['D4'], NOTE_FREQUENCIES['C4']
+    ]
+  },
+  {
+    id: 'ode',
+    title: 'Ode to Joy',
+    notes: [
+      NOTE_FREQUENCIES['E4'], NOTE_FREQUENCIES['E4'], NOTE_FREQUENCIES['F4'], NOTE_FREQUENCIES['G4'], NOTE_FREQUENCIES['G4'], NOTE_FREQUENCIES['F4'], NOTE_FREQUENCIES['E4'], NOTE_FREQUENCIES['D4'],
+      NOTE_FREQUENCIES['C4'], NOTE_FREQUENCIES['C4'], NOTE_FREQUENCIES['D4'], NOTE_FREQUENCIES['E4'], NOTE_FREQUENCIES['E4'], NOTE_FREQUENCIES['D4'], NOTE_FREQUENCIES['D4']
+    ]
+  },
+  {
+    id: 'mario',
+    title: 'Retro Game Theme',
+    notes: [
+      NOTE_FREQUENCIES['E5'], NOTE_FREQUENCIES['E5'], NOTE_FREQUENCIES['E5'], NOTE_FREQUENCIES['C5'], NOTE_FREQUENCIES['E5'], NOTE_FREQUENCIES['G5'], NOTE_FREQUENCIES['G4'],
+      NOTE_FREQUENCIES['C5'], NOTE_FREQUENCIES['G4'], NOTE_FREQUENCIES['E4'], NOTE_FREQUENCIES['A4'], NOTE_FREQUENCIES['B4'], NOTE_FREQUENCIES['A#4'], NOTE_FREQUENCIES['A4']
+    ]
+  },
+  {
+    id: 'tetris',
+    title: 'Falling Blocks',
+    notes: [
+      NOTE_FREQUENCIES['E5'], NOTE_FREQUENCIES['B4'], NOTE_FREQUENCIES['C5'], NOTE_FREQUENCIES['D5'], NOTE_FREQUENCIES['C5'], NOTE_FREQUENCIES['B4'], NOTE_FREQUENCIES['A4'], 
+      NOTE_FREQUENCIES['A4'], NOTE_FREQUENCIES['C5'], NOTE_FREQUENCIES['E5'], NOTE_FREQUENCIES['D5'], NOTE_FREQUENCIES['C5'], NOTE_FREQUENCIES['B4'], NOTE_FREQUENCIES['B4'],
+      NOTE_FREQUENCIES['C5'], NOTE_FREQUENCIES['D5'], NOTE_FREQUENCIES['E5'], NOTE_FREQUENCIES['C5'], NOTE_FREQUENCIES['A4'], NOTE_FREQUENCIES['A4']
+    ]
+  }
 ];

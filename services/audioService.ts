@@ -15,6 +15,36 @@ class AudioService {
     this.muted = muted;
   }
 
+  // Play a specific musical frequency
+  public playTone(frequency: number, type: OscillatorType = 'triangle') {
+    if (this.muted) return;
+    this.init();
+    if (!this.context || !this.gainNode) return;
+
+    if (this.context.state === 'suspended') {
+      this.context.resume();
+    }
+
+    const osc = this.context.createOscillator();
+    const gain = this.context.createGain();
+
+    osc.connect(gain);
+    gain.connect(this.context.destination);
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, this.context.currentTime);
+
+    const now = this.context.currentTime;
+    
+    // Smooth envelope for musical tone
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.15, now + 0.02); // Attack
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4); // Release/Decay
+
+    osc.start(now);
+    osc.stop(now + 0.45);
+  }
+
   // High-pitched click for correct keystroke (mechanical switch simulation)
   public playClick() {
     if (this.muted) return;

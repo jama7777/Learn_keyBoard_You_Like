@@ -34,3 +34,9 @@ export interface Stats {
   progress: number;
   timeElapsed: number;
 }
+
+export interface Song {
+  id: string;
+  title: string;
+  notes: number[]; // Array of frequencies
+}
