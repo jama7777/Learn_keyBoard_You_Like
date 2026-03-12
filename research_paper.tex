@@ -39,34 +39,35 @@ Typing Tutor, Multimodal AI, Large Language Models, Gemini API, OpenRouter, Pers
 \section{Introduction}
 Touch typing is no longer a specialized skill but a fundamental requirement for productivity across various professional fields. Despite its importance, the pedagogical approach to typing hasn't evolved significantly in decades. Most contemporary instructors still utilize fixed string sets or randomized character sequences, which can become monotonous. 
 
-TypeMaster AI aims to revolutionize this domain by treating typing not just as a motor skill, but as an interactive experience. By utilizing state-of-the-art AI, we enable users to practice using content they are actually interested in—whether it's news about technology, snippets of Python code, or the melodies of iconic musical compositions.
+TypeMaster AI aims to revolutionize this domain by treating typing not just as a motor skill, but as an interactive experience. By utilizing state-of-the-art AI, we enable users to practice using content they are actually interested in---whether it's news about technology, snippets of Python code, or the melodies of iconic musical compositions.
 
 \section{System Architecture}
-The system architecture follows a modular decoupled approach to ensure scalability and reliability.
+The system architecture follows a modular decoupled approach to ensure scalability and reliability. The interaction between components is illustrated in Fig. 1.
 
 \begin{figure}[h]
 \centering
-\begin{tikzpicture}[node distance=1.5cm]
-\tikzstyle{startstop} = [rectangle, rounded corners, minimum width=2.5cm, minimum height=0.8cm,text centered, draw=black, fill=red!30]
-\tikzstyle{process} = [rectangle, minimum width=2.5cm, minimum height=0.8cm, text centered, draw=black, fill=blue!20]
-\tikzstyle{io} = [trapezium, trapezium left angle=70, trapezium right angle=110, minimum width=2.5cm, minimum height=0.8cm, text centered, draw=black, fill=green!30]
+\begin{tikzpicture}[node distance=1.1cm, every node/.style={scale=0.75}]
+\tikzstyle{startstop} = [rectangle, rounded corners, minimum width=2.2cm, minimum height=0.7cm,text centered, draw=black, fill=red!30]
+\tikzstyle{process} = [rectangle, minimum width=2.2cm, minimum height=0.7cm, text centered, draw=black, fill=blue!20]
+\tikzstyle{io} = [trapezium, trapezium left angle=70, trapezium right angle=110, minimum width=2.2cm, minimum height=0.7cm, text centered, draw=black, fill=green!30]
+\tikzstyle{arrow} = [thick,->,>=stealth]
 
-\node (ui) [startstop] {User Interface (React)};
+\node (ui) [startstop] {UI (React 19)};
 \node (orchestrator) [process, below of=ui] {App Orchestrator};
-\node (ai) [process, left of=orchestrator, xshift=-1.5cm] {AI Service Manager};
-\node (audio) [process, right of=orchestrator, xshift=1.5cm] {Audio Service};
-\node (gemini) [io, below of=ai, yshift=-0.5cm] {Gemini 2.0 API};
-\node (or) [io, right of=gemini, xshift=1cm] {OpenRouter Fallback};
+\node (ai) [process, left of=orchestrator, xshift=-1.2cm, yshift=-0.5cm] {AI Manager};
+\node (audio) [process, right of=orchestrator, xshift=1.2cm, yshift=-0.5cm] {Audio Engine};
+\node (gemini) [io, below of=ai, yshift=-0.5cm] {Gemini 2.0};
+\node (or) [io, right of=gemini, xshift=0.8cm] {OpenRouter};
 
-\draw [arrow, <->] (ui) -- (orchestrator);
-\draw [arrow, ->] (orchestrator) -- (ai);
-\draw [arrow, ->] (orchestrator) -- (audio);
+\draw [arrow] (ui) -- (orchestrator);
+\draw [arrow, ->] (orchestrator) -| (ai);
+\draw [arrow, ->] (orchestrator) -| (audio);
 \draw [arrow, ->] (ai) -- (gemini);
-\draw [arrow, ->] (ai) -- (or);
-\draw [arrow, dashed] (gemini) -- node[anchor=north] {Failover} (or);
+\draw [arrow, ->] (ai) -| (or);
+\draw [arrow, dashed] (gemini) -- node[anchor=north, scale=0.8] {Safe-fail} (or);
 
 \end{tikzpicture}
-\caption{System Architecture Diagram for TypeMaster AI.}
+\caption{System Architecture of TypeMaster AI.}
 \end{figure}
 
 \subsection{Frontend and UI Design}
