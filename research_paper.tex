@@ -115,31 +115,31 @@ architecture is illustrated in Fig.~1.
 \begin{figure}[h]
 \centering
 \begin{tikzpicture}[node distance=1.1cm, every node/.style={scale=0.75}]
-\tikzstyle{startstop} = [rectangle, rounded corners, minimum width=2.2cm,
+\tikzstyle{startstop} = [rectangle, rounded corners, minimum width=2.3cm,
   minimum height=0.7cm, text centered, draw=black, fill=red!30]
-\tikzstyle{process} = [rectangle, minimum width=2.2cm,
+\tikzstyle{process} = [rectangle, minimum width=2.3cm,
   minimum height=0.7cm, text centered, draw=black, fill=blue!20]
 \tikzstyle{io} = [trapezium, trapezium left angle=70,
-  trapezium right angle=110, minimum width=2.2cm,
+  trapezium right angle=110, minimum width=2.3cm,
   minimum height=0.7cm, text centered, draw=black, fill=green!30]
 \tikzstyle{arrow} = [thick,->,>=stealth]
 
-\node (ui)           [startstop]                              {UI (React 19)};
-\node (orch)         [process, below of=ui]                   {App Orchestrator};
-\node (ai)           [process, below left=0.6cm and 1.0cm of orch]  {AI Manager};
-\node (audio)        [process, below right=0.6cm and 1.0cm of orch] {Audio Engine};
-\node (gemini)       [io, below of=ai,  yshift=-0.8cm]        {Gemini 2.0};
-\node (openrouter)   [io, below of=audio, yshift=-0.8cm]      {OpenRouter};
+\node (ui)         [startstop]                                    {UI (React 19)};
+\node (orch)       [process, below of=ui]                         {App Orchestrator};
+\node (ai)         [process, below left=0.6cm and 1.0cm of orch]  {AI Manager};
+\node (audio)      [process, below right=0.6cm and 1.0cm of orch] {Audio Engine};
+\node (or)         [io, below of=ai, yshift=-0.8cm]               {OpenRouter API};
+\node (gemini)     [io, below of=or, yshift=-0.5cm]               {Gemini 2.0 (via OR)};
 
-\draw [arrow]        (ui)    -- (orch);
-\draw [arrow]        (orch)  -| (ai);
-\draw [arrow]        (orch)  -| (audio);
-\draw [arrow]        (ai)    -- (gemini);
-\draw [arrow, dashed](ai)    -| node[above,font=\tiny]{Failover} (openrouter);
+\draw [arrow] (ui)    -- (orch);
+\draw [arrow] (orch)  -| (ai);
+\draw [arrow] (orch)  -| (audio);
+\draw [arrow] (ai)    -- (or);
+\draw [arrow] (or)    -- (gemini);
 \end{tikzpicture}
-\caption{High-level system architecture of TypeMaster AI.
-  Dashed arrow denotes the automatic failover path from Gemini to
-  OpenRouter when rate limits are exceeded.}
+\caption{System architecture of TypeMaster AI. OpenRouter acts as the
+  sole API gateway, internally routing all requests to the Gemini 2.0
+  model on its platform.}
 \end{figure}
 
 \subsection{Concurrent UI and State Management}
@@ -235,26 +235,30 @@ preserving original paragraph structure and tone. This ensures
 practice material is free of distracting errors that could
 inadvertently teach incorrect typing patterns.
 
-\subsection{OpenRouter Failover and Rate-Limit Protection}
+\subsection{OpenRouter as the Primary API Gateway}
 
-The \texttt{getApiKey()} function detects the type of API key at
-runtime by inspecting its prefix: keys beginning with
-\texttt{sk-or-} are routed through the OpenRouter REST endpoint
-(\texttt{openrouter.ai/api/v1/chat/completions}), while standard
-Gemini keys use the official \texttt{@google/genai} SDK.
+In this deployment, the application uses a single 
+\textbf{OpenRouter API key} (prefixed \texttt{sk-or-}) as its
+exclusive backend. The \texttt{getApiKey()} function detects this
+prefix at runtime and routes all requests to OpenRouter's REST
+endpoint (\texttt{openrouter.ai/api/v1/chat/completions}).
+No direct Google Gemini API key is used.
 
-This dual-path strategy provides two critical reliability guarantees:
+OpenRouter acts as a managed proxy, internally routing requests to
+the \textbf{google/gemini-2.0-flash-lite} model on its platform.
+This architecture provides several production-grade advantages:
 \begin{itemize}
-  \item \textbf{Rate-limit bypass:} Gemini's free tier enforces
-        strict Requests-Per-Minute (RPM) and Tokens-Per-Minute (TPM)
-        quotas. When throughput is exhausted, the orchestrator
-        automatically re-routes the request to OpenRouter's shared
-        model pool without interrupting the user session.
-  \item \textbf{Model versioning resilience:}  OpenRouter abstracts
-        model identifiers, allowing the system to fall back to an
-        alternate compatible model (e.g.,
-        \texttt{google/gemini-2.0-flash-exp:free}) if the primary
-        model ID becomes deprecated or unavailable.
+  \item \textbf{Zero credential management:} A single OpenRouter
+        key grants access to multiple model providers without
+        managing separate vendor API keys.
+  \item \textbf{Built-in rate-limit handling:} OpenRouter's
+        distributed pool absorbs burst traffic, eliminating the
+        hard RPM/TPM ceilings imposed by the direct Gemini free tier.
+  \item \textbf{Model versioning resilience:} If the primary model
+        (\texttt{gemini-2.0-flash-lite}) is deprecated, OpenRouter
+        can transparently fall back to an alternate compatible model
+        (e.g., \texttt{google/gemini-2.0-flash-exp:free}) with no
+        application-level code changes required.
 \end{itemize}
 
 \subsection{Multimodal Input Processing}
