@@ -1,0 +1,74 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{TypeMaster AI: A Multimodal AI-Powered Typing Tutor for Personalized Skill Acquisition\\
+{\footnotesize \textsuperscript{*}Online Application: \url{https://learn-key-board-you-like.vercel.app/}}
+}
+
+\author{\IEEEauthorblockN{Jamadagni Gottipati}
+\IEEEauthorblockA{\textit{Department of Computer Science and Engineering} \\
+\textit{DVR \& Dr. HS MIC College of Technology}\\
+Kanchikacherla, Andhra Pradesh, India \\
+gottipatijamadagni@mictech.edu.in}
+}
+
+\maketitle
+
+\begin{abstract}
+Proficiency in touch typing remains a critical competency in the digital era, yet traditional typing tutors often rely on repetitive, static content that fails to maintain user engagement. This paper introduces TypeMaster AI, an advanced multimodal typing tutor that leverages Large Language Models (LLMs) to provide personalized and interactive learning experiences. By integrating the Gemini 2.0 API and OpenRouter, the system offers dynamic lesson generation based on user-defined topics, real-time grammar correction for custom inputs, and a unique audio-to-melody feature that transcribes musical compositions into typing exercises. Our results demonstrate that the integration of diverse AI modalities significantly enhances user motivation and provides a more versatile training environment compared to conventional methods.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Typing Tutor, Multimodal AI, Large Language Models, Gemini API, OpenRouter, Personalized Learning, Audio Processing.
+\end{IEEEkeywords}
+
+\section{Introduction}
+Touch typing is no longer a specialized skill but a fundamental requirement for productivity across various professional fields. Despite its importance, the pedagogical approach to typing hasn't evolved significantly in decades. Most contemporary instructors still utilize fixed string sets or randomized character sequences, which can become monotonous. 
+
+TypeMaster AI aims to revolutionize this domain by treating typing not just as a motor skill, but as an interactive experience. By utilizing state-of-the-art AI, we enable users to practice using content they are actually interested in—whether it's news about space, snippets of Python code, or the lyrics and melody of their favorite song.
+
+\section{System Architecture}
+The system is built upon a modern web stack designed for responsiveness and real-time interaction.
+
+\subsection{Frontend and UI Design}
+The application is developed using React 19 and Vite, ensuring high performance and a smooth user experience. The interface utilizes TailwindCSS (via standardized utility classes) and Lucide-React for a premium, modern aesthetic. Key components include:
+\begin{itemize}
+    \item \textbf{Virtual Keyboard:} Real-time finger positioning hints using character-to-key mapping.
+    \item \textbf{Dynamic Typing Area:} Precise tracking of WPM, Accuracy, and Mistakes.
+    \item \textbf{Music Integration:} Visualizing melodies and syncing them with keystrokes.
+\end{itemize}
+
+\subsection{AI Modalities}
+The core intelligence of TypeMaster AI is provided by the Gemini 2.0 Flash Lite model, accessed through both Google's Generative AI SDK and the OpenRouter API. This allows for high availability and low latency.
+\begin{itemize}
+    \item \textbf{Lesson Generation:} Users can input any topic (e.g., ``Quantum Computing'' or ``Python Basics''), and the AI generates a customized 50-word paragraph or code snippet tailored for typing practice.
+    \item \textbf{Multimodal File Processing:} Using Gemini's vision and document processing capabilities, users can upload images or PDFs. The AI transcribes the text, turning external static content into an immediate typing drill.
+    \item \textbf{Grammar Refinement:} A background process automatically corrects spelling and punctuation in custom-pasted text to ensure the practice material is of high quality.
+\end{itemize}
+
+\section{Innovative Features}
+\subsection{Audio-to-Melody Extraction}
+One of the most distinguishing features of TypeMaster AI is the ``Melody Typing'' mode. Users can upload an audio file (MP3/WAV). The system uses AI to extract the dominant melody and transcribes it into musical notes (e.g., C4, E4, G4). Each correct keystroke by the user plays the corresponding note, essentially allowing the user to ``play'' the instrument through their typing.
+
+\subsection{OpenRouter Integration}
+To ensure robust connectivity, we implemented a dual-API gateway. If the primary Google API reaches quota limits or is unavailable, the system automatically falls back to OpenRouter, ensuring uninterrupted service for the end-user.
+
+\section{Implementation and Deployment}
+The project is open-source and hosted on GitHub (\url{https://github.com/jama7777/Learn_keyBoard_You_Like}). The continuous integration and deployment (CI/CD) pipeline is managed through Vercel, providing a stable production environment at: \url{https://learn-key-board-you-like.vercel.app/}.
+
+\section{Conclusion}
+TypeMaster AI proves that the integration of multimodal AI into utility software can significantly bridge the gap between education and entertainment. By allowing users to type what they love and listen to what they type, we create a feedback loop that encourages longer and more frequent practice sessions. Future work will focus on introducing competitive multiplayer modes and deeper fine-tuning of AI-generated content for specific technical disciplines.
+
+\end{document}
