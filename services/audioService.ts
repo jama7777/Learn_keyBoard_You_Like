@@ -99,6 +99,30 @@ class AudioService {
     osc.start(this.context.currentTime);
     osc.stop(this.context.currentTime + 0.15);
   }
+
+  // Chime for starting a session
+  public playStart() {
+    if (this.muted) return;
+    this.init();
+    if (!this.context || !this.gainNode) return;
+
+    const notes = [659.25, 880.00]; // E5, A5
+    const now = this.context.currentTime;
+    
+    notes.forEach((freq, i) => {
+        const osc = this.context.createOscillator();
+        const gain = this.context.createGain();
+        osc.connect(gain);
+        gain.connect(this.context.destination);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + i * 0.1);
+        gain.gain.setValueAtTime(0, now + i * 0.1);
+        gain.gain.linearRampToValueAtTime(0.1, now + i * 0.1 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.2);
+        osc.start(now + i * 0.1);
+        osc.stop(now + i * 0.1 + 0.2);
+    });
+  }
 }
 
 export const audioService = new AudioService();

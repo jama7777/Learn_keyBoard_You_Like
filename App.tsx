@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, RotateCcw, Keyboard, Activity, Brain, Volume2, VolumeX, FileText, AlertCircle, Upload, FileUp, Loader2, History, Trash2, Clock, X, Cloud, CloudLightning, LogOut, CheckCircle2, Wand2, Sparkles, Music, Music2, Mic2, Plus, FileAudio } from 'lucide-react';
+import { Play, RotateCcw, Keyboard, Activity, Brain, Volume2, VolumeX, FileText, AlertCircle, Upload, FileUp, Loader2, History, Trash2, Clock, X, Wand2, Sparkles, Music, Music2, Mic2, Plus, FileAudio } from 'lucide-react';
 
 import { LessonConfig, LessonMode, Stats, Song } from './types';
 import { PRESET_LESSONS, CHAR_TO_KEY_MAP, PRESET_SONGS } from './constants';
@@ -7,7 +7,6 @@ import { audioService } from './services/audioService';
 import { generateLessonContent, processFileContent, fixGrammar, generateSong, extractMelodyFromAudio } from './services/geminiService';
 import { generateLessonText } from './services/lessonGenerator';
 import { historyService, SearchHistoryItem } from './services/historyService';
-import { cloudService } from './services/cloudService';
 
 import VirtualKeyboard from './components/VirtualKeyboard';
 import Hands from './components/Hands';
@@ -48,16 +47,8 @@ const App: React.FC = () => {
   // AI Generator & Cloud State
   const [customTopic, setCustomTopic] = useState<string>('');
   const [customFormat, setCustomFormat] = useState<string>('Paragraph');
-  const [customMusicVibe, setCustomMusicVibe] = useState<string>(''); // New state for music input
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState<boolean>(false);
-  
-  // Cloud Auth
-  const [cloudUser, setCloudUser] = useState<string | null>(null);
-  const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
-  const [loginInput, setLoginInput] = useState<string>('');
-  const [isCloudLoading, setIsCloudLoading] = useState<boolean>(false);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Custom Input State
   const [customInputText, setCustomInputText] = useState<string>('');
@@ -70,6 +61,9 @@ const App: React.FC = () => {
   const [activeSong, setActiveSong] = useState<Song | null>(null);
   const [songPrompt, setSongPrompt] = useState<string>('');
   const [isGeneratingSong, setIsGeneratingSong] = useState<boolean>(false);
+  const [songError, setSongError] = useState<string>('');
+  const [backgroundAudioUrl, setBackgroundAudioUrl] = useState<string | null>(null);
+  const backgroundAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Error Tracking
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
@@ -92,8 +86,8 @@ const App: React.FC = () => {
   // Initialize Audio Context on first interaction
   useEffect(() => {
     const unlockAudio = () => {
-      // Small silent click to unlock audio context
-      audioService.playClick(); 
+      // Chime or silent play to unlock audio context
+      audioService.playStart(); 
       window.removeEventListener('click', unlockAudio);
       window.removeEventListener('keydown', unlockAudio);
     };
@@ -105,24 +99,19 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Load Local History on Mount (if not logged in)
+  // Load Local History on Mount
   useEffect(() => {
-    if (!cloudUser) {
-      setSearchHistory(historyService.getHistory());
-    }
-  }, [cloudUser]);
+    setSearchHistory(historyService.getHistory());
+  }, []);
 
   // Dynamic Auto-Correction Effect
   useEffect(() => {
-    // Only run if text exists, is substantial, and not currently processing something else
     if (!customInputText || customInputText.length < 5 || isFileProcessing || isLoading) return;
 
     const timeoutId = setTimeout(async () => {
       setIsAutoFixing(true);
       try {
         const fixedText = await fixGrammar(customInputText);
-        // Only update if the text has actually changed (avoids cursor jumps on valid text)
-        // We trim to ensure we don't fix just trailing whitespace differences aggressively
         if (fixedText && fixedText.trim() !== customInputText.trim()) {
            setCustomInputText(fixedText);
         }
@@ -131,7 +120,7 @@ const App: React.FC = () => {
       } finally {
         setIsAutoFixing(false);
       }
-    }, 2000); // 2 second pause trigger
+    }, 2000);
 
     return () => clearTimeout(timeoutId);
   }, [customInputText, isFileProcessing, isLoading]);
@@ -157,30 +146,9 @@ const App: React.FC = () => {
     const newState = !isMuted;
     setIsMuted(newState);
     audioService.setMuted(newState);
-  };
-
-  const handleCloudLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!loginInput.trim()) return;
-    
-    setIsCloudLoading(true);
-    try {
-        const username = loginInput.trim();
-        const history = await cloudService.connect(username);
-        setCloudUser(username);
-        setSearchHistory(history);
-        setShowLoginModal(false);
-        setLoginInput('');
-    } catch (err) {
-        console.error("Login failed", err);
-    } finally {
-        setIsCloudLoading(false);
+    if (backgroundAudioRef.current) {
+        backgroundAudioRef.current.muted = newState;
     }
-  };
-
-  const handleCloudLogout = () => {
-      setCloudUser(null);
-      setSearchHistory(historyService.getHistory()); // Revert to local
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -227,7 +195,7 @@ const App: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    setCustomMusicVibe(`Uploading: ${file.name}...`);
+    setSongError(`Uploading: ${file.name}...`);
     setIsLoading(true);
     
     try {
@@ -235,13 +203,19 @@ const App: React.FC = () => {
         reader.onload = async (e) => {
             const base64Data = e.target?.result as string;
             if (base64Data) {
-               // Use a separate helper to not block the text generation
+               // Also set as background audio
+               const blob = await (await fetch(base64Data)).blob();
+               const url = URL.createObjectURL(blob);
+               setBackgroundAudioUrl(url);
+
                const song = await extractMelodyFromAudio(base64Data, file.type);
                if (song) {
                    setActiveSong(song);
-                   setCustomMusicVibe(song.title);
+                   setSongError('');
                } else {
-                   setCustomMusicVibe("Failed to process audio.");
+                   setSongError('');
+                   // If AI fails to extract melody, we still have the background audio ready
+                   setActiveSong({ id: `raw_${Date.now()}`, title: file.name, notes: [] }); 
                }
             }
             setIsLoading(false);
@@ -249,7 +223,7 @@ const App: React.FC = () => {
         reader.readAsDataURL(file);
     } catch (err) {
         console.error(err);
-        setCustomMusicVibe("Error uploading audio.");
+        setSongError("Error uploading audio.");
         setIsLoading(false);
     }
   };
@@ -257,65 +231,44 @@ const App: React.FC = () => {
   const handleSongGeneration = async () => {
       if (!songPrompt.trim()) return;
       setIsGeneratingSong(true);
+      setSongError('');
       try {
           const newSong = await generateSong(songPrompt);
           if (newSong) {
               setActiveSong(newSong);
               setShowMusicModal(false);
               setSongPrompt('');
+              setSongError('');
+          } else {
+              setSongError(`Could not generate melody for "${songPrompt}". Try a different song name or vibe.`);
           }
       } catch (err) {
           console.error("Song generation failed", err);
+          setSongError('An error occurred. Please try again.');
       } finally {
           setIsGeneratingSong(false);
       }
   };
-
   const startCustomInput = () => {
     if (!customInputText.trim()) return;
-    
-    // Create a temporary lesson config
     const lesson: LessonConfig = {
       id: 'custom-input',
       title: 'Custom Text / Code',
       description: 'Your uploaded content',
-      mode: LessonMode.AI_CUSTOM // Reuse AI mode logic for custom handling
+      mode: LessonMode.AI_CUSTOM
     };
-
-    // Preset the text state so startLesson uses it
     setText(sanitizeText(customInputText));
     startLesson(lesson, true);
   };
 
-  // Unified Handler for creating a session with custom text AND optional music
   const handleCreateCustomSession = async () => {
-    if (!customTopic.trim() && !customMusicVibe.trim() && !activeSong) return;
-
+    if (!customTopic.trim() && !songPrompt.trim() && !activeSong) return;
     const topic = customTopic.trim() || 'Interesting facts';
-    
     setIsLoading(true);
 
     try {
-        // Parallel generation: Text and Song
-        // If user already uploaded a song (activeSong exists) we don't regenerate unless they changed the vibe text
-        const shouldGenerateSong = customMusicVibe.trim() && (!activeSong || activeSong.title !== customMusicVibe);
-        
-        const promises: [Promise<string>, Promise<Song | null>] = [
-            generateLessonContent(topic, customFormat),
-            shouldGenerateSong ? generateSong(customMusicVibe.trim()) : Promise.resolve(null)
-        ];
+        const generatedText = await generateLessonContent(topic, customFormat);
 
-        const [generatedText, generatedSongResult] = await Promise.all(promises);
-
-        // Update Music
-        if (generatedSongResult) {
-            setActiveSong(generatedSongResult);
-        } else if (!activeSong && customMusicVibe.trim()) {
-            // Fallback if song gen fails but was requested
-            setActiveSong(PRESET_SONGS[0]); 
-        }
-
-        // Save History (Local + Cloud)
         if (customTopic) {
              const newItem: SearchHistoryItem = {
                  id: Date.now().toString(),
@@ -323,18 +276,10 @@ const App: React.FC = () => {
                  format: customFormat,
                  timestamp: Date.now()
              };
-             
              setSearchHistory(prev => [newItem, ...prev.filter(i => i.topic !== newItem.topic || i.format !== newItem.format)].slice(0,20));
-
-             if (cloudUser) {
-                setIsSyncing(true);
-                cloudService.uploadItem(cloudUser, newItem).then(() => setIsSyncing(false));
-             } else {
-                historyService.addToHistory(topic, customFormat);
-             }
+             historyService.addToHistory(topic, customFormat);
         }
 
-        // Start Lesson
         const lesson: LessonConfig = {
             id: 'custom-ai',
             title: customFormat === 'Code (Python)' ? 'Python Drill' : 'AI Session',
@@ -342,17 +287,15 @@ const App: React.FC = () => {
             mode: LessonMode.AI_CUSTOM
         };
 
-        // Reset state
         setTypedHistory('');
         setStats({ wpm: 0, accuracy: 100, errors: 0, progress: 0, timeElapsed: 0 });
         setMistakes([]); 
         setHasStarted(false);
         setIsCompleted(false);
-        // Do NOT reset song index here conceptually, but since we restart typing, we start from 0 index text.
         startTimeRef.current = null;
         setCurrentLesson(lesson);
         setText(sanitizeText(generatedText || "Error loading content."));
-
+        setShowMusicModal(false);
     } catch (err) {
         console.error("Session generation failed", err);
     } finally {
@@ -362,28 +305,21 @@ const App: React.FC = () => {
 
   const startLesson = async (lesson: LessonConfig, isRetry = false) => {
     setIsLoading(true);
-    // Reset state immediately
     setTypedHistory('');
     setStats({ wpm: 0, accuracy: 100, errors: 0, progress: 0, timeElapsed: 0 });
     setMistakes([]); 
     setHasStarted(false);
     setIsCompleted(false);
-    // Song index resets because it's tied to typedHistory.length implicitly now
     startTimeRef.current = null;
     setCurrentLesson(lesson);
 
     let lessonText = '';
 
     if (lesson.id === 'custom-input' && customInputText) {
-        // Use the text we already set or from the custom input area
         lessonText = customInputText;
     } else if (lesson.mode === LessonMode.AI_CUSTOM) {
-      // AI Mode via Quick Start buttons (re-using old logic if needed, but mostly superseded by custom session handler)
-       // This branch might be hit if we "retry" an AI lesson
       try {
         if (!isRetry || !text) {
-            // If we are here, it's likely a retry or direct call without content
-            // We'll just generate text again if needed
              lessonText = await generateLessonContent(customTopic || 'technology', customFormat);
         } else {
              lessonText = text;
@@ -392,7 +328,10 @@ const App: React.FC = () => {
         lessonText = "Error loading content. Please try again.";
       }
     } else {
-      // Preset Mode
+      if (!isRetry && (lesson as any).defaultSongId) {
+          const dSong = PRESET_SONGS.find(s => s.id === (lesson as any).defaultSongId);
+          if (dSong) setActiveSong(dSong);
+      }
       if (isRetry && text) {
           lessonText = text;
       } else {
@@ -447,13 +386,8 @@ const App: React.FC = () => {
     // Optimistic UI update
     setSearchHistory(prev => prev.filter(i => i.id !== id));
     
-    if (cloudUser) {
-        setIsSyncing(true);
-        cloudService.deleteItem(cloudUser, id).then(() => setIsSyncing(false));
-    } else {
-        const updated = historyService.deleteItem(id);
-        setSearchHistory(updated);
-    }
+    const updated = historyService.deleteItem(id);
+    setSearchHistory(updated);
   };
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -470,7 +404,6 @@ const App: React.FC = () => {
     if (e.key === 'Enter') e.preventDefault();
 
     if (!hasStarted) {
-      setHasStarted(true);
       startTimeRef.current = Date.now();
     }
 
@@ -510,22 +443,31 @@ const App: React.FC = () => {
       const nextIndex = currentIndex + 1;
       const progress = Math.round((nextIndex / text.length) * 100);
 
-      // Play Sound Logic
-      // Key Change: Note index is tied to the text index (currentIndex).
-      // If correct: Play note at current index.
-      // If wrong: Play error (Skip the note that belonged to this index).
       if (activeSong && activeSong.notes.length > 0) {
          const noteIndex = currentIndex % activeSong.notes.length;
          if (isCorrect) {
+             // Play start chime on the very first correct note
+             if (!hasStarted) {
+                 audioService.playStart();
+                 setHasStarted(true);
+                 if (backgroundAudioUrl && backgroundAudioRef.current) {
+                    backgroundAudioRef.current.play().catch(e => console.warn("Audio play blocked", e));
+                 }
+             }
              audioService.playTone(activeSong.notes[noteIndex]);
          } else {
-             // "Skip that sound": We play error instead of the melody note.
              audioService.playError();
          }
       } else {
-         // No song active, just click or clack
          if (isCorrect) {
-             audioService.playClick();
+             if (!hasStarted) {
+                audioService.playStart();
+                setHasStarted(true);
+                if (backgroundAudioUrl && backgroundAudioRef.current) {
+                    backgroundAudioRef.current.play().catch(e => console.warn("Audio play blocked", e));
+                 }
+             }
+             // Clicks removed as requested
          } else {
              audioService.playError();
          }
@@ -551,6 +493,12 @@ const App: React.FC = () => {
       // Completion Check
       if (nextIndex >= text.length) {
         setIsCompleted(true);
+        
+        // Stop background audio
+        if (backgroundAudioRef.current) {
+            backgroundAudioRef.current.pause();
+        }
+
         // Play a simple completion flourish if music mode
         if (activeSong) {
             setTimeout(() => audioService.playTone(523.25), 200); // C5
@@ -578,30 +526,6 @@ const App: React.FC = () => {
   const renderMenu = () => (
     <div className="max-w-6xl mx-auto px-4 py-12 relative">
       <div className="absolute top-4 right-4 flex gap-2">
-         {cloudUser ? (
-             <div className="flex items-center gap-2 bg-slate-800/80 px-3 py-2 rounded-full border border-indigo-500/30">
-                 <div className="flex items-center gap-1.5 text-indigo-400">
-                    {isSyncing ? <Loader2 size={16} className="animate-spin"/> : <CloudLightning size={16} />}
-                    <span className="text-xs font-bold font-mono uppercase tracking-wide">{cloudUser}</span>
-                 </div>
-                 <div className="w-px h-4 bg-slate-700 mx-1" />
-                 <button 
-                   onClick={handleCloudLogout}
-                   className="text-slate-400 hover:text-red-400 transition-colors"
-                   title="Logout"
-                 >
-                   <LogOut size={16} />
-                 </button>
-             </div>
-         ) : (
-            <button 
-                onClick={() => setShowLoginModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full transition-colors border border-slate-700/50 backdrop-blur-sm text-sm font-medium group"
-            >
-                <Cloud size={18} className="text-slate-500 group-hover:text-indigo-400 transition-colors"/>
-                <span>Cloud Sync</span>
-            </button>
-         )}
          
          <button 
             onClick={() => setShowMusicModal(true)}
@@ -664,14 +588,13 @@ const App: React.FC = () => {
            {showHistory ? (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <p className="text-slate-400 text-sm mb-2 flex items-center gap-2">
-                    {cloudUser ? <CloudLightning size={14} className="text-indigo-400"/> : <Clock size={14} />} 
-                    {cloudUser ? `Cloud History` : `Recent Searches`}
-                    {isSyncing && <Loader2 size={12} className="animate-spin text-slate-500 ml-auto"/>}
+                    <Clock size={14} /> 
+                    Recent Searches
                 </p>
                 <div className="h-40 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
                     {searchHistory.length === 0 ? (
                         <p className="text-xs text-slate-500 italic text-center py-4">
-                            {isCloudLoading ? "Syncing..." : "No history found."}
+                            No history found.
                         </p>
                     ) : (
                         searchHistory.map(item => (
@@ -708,42 +631,18 @@ const App: React.FC = () => {
                         onKeyDown={(e) => e.stopPropagation()} 
                     />
                     
-                    <div className="flex gap-2">
+                     <div className="flex gap-2">
                         <select 
                             value={customFormat}
                             onChange={(e) => setCustomFormat(e.target.value)}
-                            className="w-1/3 bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
                         >
                             <option value="Paragraph">Text</option>
                             <option value="Code (Python)">Python</option>
                             <option value="Code (JS)">JS</option>
                             <option value="Story">Story</option>
                         </select>
-                         <div className="flex-1 relative">
-                            <input 
-                                type="text" 
-                                placeholder="Song Name or Vibe..." 
-                                className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-3 pr-8 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 truncate"
-                                value={customMusicVibe}
-                                onChange={(e) => setCustomMusicVibe(e.target.value)}
-                                onKeyDown={(e) => e.stopPropagation()} 
-                            />
-                            <button 
-                                onClick={() => audioInputRef.current?.click()}
-                                className="absolute right-1 top-1 p-1 hover:text-pink-400 text-slate-500 transition-colors"
-                                title="Upload Audio to Extract Melody"
-                            >
-                                <FileAudio size={14} />
-                            </button>
-                            <input 
-                                type="file" 
-                                ref={audioInputRef} 
-                                className="hidden" 
-                                accept="audio/*"
-                                onChange={handleAudioUpload}
-                            />
-                         </div>
-                    </div>
+                     </div>
                     
                     <button 
                         onClick={handleCreateCustomSession}
@@ -820,48 +719,6 @@ const App: React.FC = () => {
 
       </div>
 
-      {/* Cloud Login Modal */}
-      {showLoginModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-200">
-                <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                    <Cloud className="text-indigo-400" size={24} /> 
-                    Connect Cloud
-                </h3>
-                <p className="text-slate-400 text-sm mb-4">
-                    Enter a Cloud ID to sync your AI search history across sessions on this device.
-                </p>
-                
-                <form onSubmit={handleCloudLogin} className="flex flex-col gap-3">
-                    <input 
-                        type="text"
-                        value={loginInput}
-                        onChange={(e) => setLoginInput(e.target.value)}
-                        placeholder="e.g. user123"
-                        autoFocus
-                        className="bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                    />
-                    <div className="flex gap-2 justify-end mt-2">
-                         <button 
-                            type="button" 
-                            onClick={() => setShowLoginModal(false)}
-                            className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            type="submit" 
-                            disabled={isCloudLoading || !loginInput.trim()}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                           {isCloudLoading ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
-                           Connect
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-      )}
 
       {/* Music Settings Modal */}
       {showMusicModal && (
@@ -878,51 +735,50 @@ const App: React.FC = () => {
                   <p className="text-slate-400 text-sm mb-6">
                       Every correct keystroke plays the next note of the song. Choose a melody or generate one!
                   </p>
-
-                  <div className="grid grid-cols-2 gap-3 mb-6">
-                      <button 
-                          onClick={() => setActiveSong(null)}
-                          className={`p-3 rounded-lg border text-sm font-medium transition-all ${activeSong === null ? 'bg-slate-700 border-white text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}
-                      >
-                          🔇 No Melody (Clicks)
-                      </button>
-                      {PRESET_SONGS.map(song => (
-                          <button 
-                              key={song.id}
-                              onClick={() => setActiveSong(song)}
-                              className={`p-3 rounded-lg border text-sm font-medium transition-all ${activeSong?.id === song.id ? 'bg-pink-500/20 border-pink-500 text-pink-200' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-pink-500/50'}`}
-                          >
-                              🎵 {song.title}
-                          </button>
-                      ))}
+                  <div className="max-h-72 overflow-y-auto pr-2 custom-scrollbar mb-6">
+                    <div className="flex flex-col gap-2">
+                        <button 
+                            onClick={() => setActiveSong(null)}
+                            className={`p-4 rounded-xl border-2 text-left font-bold transition-all flex items-center justify-between ${activeSong === null ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                        >
+                            <span className="flex items-center gap-3">
+                                {activeSong === null ? <VolumeX className="text-indigo-400" size={20} /> : <Volume2 size={20} />}
+                                No Background Melody (Default Clicks)
+                            </span>
+                            {activeSong === null && <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.5)]"></div>}
+                        </button>
+                        {PRESET_SONGS.map(song => (
+                            <button 
+                                key={song.id}
+                                onClick={() => setActiveSong(song)}
+                                className={`p-4 rounded-xl border-2 text-left font-bold transition-all flex items-center justify-between ${activeSong?.id === song.id ? 'bg-pink-500/10 border-pink-500 text-pink-200' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-pink-500/50'}`}
+                            >
+                                <span className="flex items-center gap-3">
+                                    <Music2 size={20} className={activeSong?.id === song.id ? "text-pink-400" : "text-slate-500"} />
+                                    {song.title}
+                                </span>
+                                {activeSong?.id === song.id && <div className="w-2.5 h-2.5 bg-pink-500 rounded-full shadow-[0_0_8px_rgba(236,72,153,0.5)]"></div>}
+                            </button>
+                        ))}
+                    </div>
                   </div>
                   
                   <div className="border-t border-slate-800 pt-5">
-                      <label className="text-xs text-slate-400 font-bold uppercase tracking-wide block mb-2 flex items-center gap-2">
-                         <Sparkles size={12} className="text-indigo-400"/> AI Composer
-                      </label>
-                      <div className="flex gap-2">
-                          <input 
-                              type="text"
-                              value={songPrompt}
-                              onChange={(e) => setSongPrompt(e.target.value)}
-                              placeholder="e.g. 'A mysterious sad melody' or 'Upbeat 8-bit'"
-                              className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500 text-sm"
-                              onKeyDown={(e) => e.key === 'Enter' && handleSongGeneration()}
-                          />
-                          <button 
-                              onClick={handleSongGeneration}
-                              disabled={isGeneratingSong || !songPrompt.trim()}
-                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                              {isGeneratingSong ? <Loader2 size={16} className="animate-spin"/> : <Wand2 size={16}/>}
-                          </button>
-                      </div>
-                      {activeSong && activeSong.id.startsWith('ai_') && (
-                          <div className="mt-3 p-2 bg-indigo-500/10 border border-indigo-500/30 rounded text-xs text-indigo-300 flex items-center gap-2">
-                              <Music2 size={14} /> Currently playing generated song: "{activeSong.title}"
-                          </div>
-                      )}
+                      {/* Active Song Info */}
+                      {activeSong && !songError && (
+                           <div className="mt-4 p-4 bg-slate-950 rounded-2xl border border-slate-800 ring-1 ring-pink-500/20">
+                               <div className="flex items-center justify-between mb-3">
+                                   <div className="flex items-center gap-2 text-xs text-pink-300 font-extrabold uppercase tracking-widest">
+                                       <Music2 size={16} className="text-pink-500" /> Currently Active
+                                   </div>
+                                    <span className="px-2 py-0.5 rounded-full bg-pink-500/20 text-[10px] text-pink-400 font-bold">READY</span>
+                               </div>
+                               <h4 className="text-lg font-bold text-white mb-1 line-clamp-1">{activeSong.title}</h4>
+                               <p className="text-xs text-slate-500 font-mono">
+                                   {activeSong.notes.length} notes extracted. Each correct keystroke plays a note from the song.
+                               </p>
+                           </div>
+                       )}
                   </div>
               </div>
           </div>
@@ -1084,8 +940,18 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+      {backgroundAudioUrl && (
+        <audio 
+          ref={backgroundAudioRef} 
+          src={backgroundAudioUrl} 
+          loop 
+          className="hidden" 
+        />
+      )}
     </div>
   );
+
+  return currentLesson ? renderPractice() : renderMenu();
 };
 
 export default App;

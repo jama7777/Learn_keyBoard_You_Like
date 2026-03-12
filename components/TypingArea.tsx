@@ -36,7 +36,7 @@ const TypingArea: React.FC<TypingAreaProps> = ({ fullText, typedHistory }) => {
         ref={containerRef}
         className="
           bg-slate-800/80 backdrop-blur-md rounded-2xl p-8 shadow-inner border border-slate-700 
-          h-64 overflow-hidden relative
+          h-64 overflow-y-auto relative custom-scrollbar
           text-3xl font-mono leading-relaxed break-words whitespace-pre-wrap
           transition-all duration-100
         "

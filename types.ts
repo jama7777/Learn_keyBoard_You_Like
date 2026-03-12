@@ -25,6 +25,7 @@ export interface LessonConfig {
   description: string;
   mode: LessonMode;
   content?: string; // Pre-defined content
+  defaultSongId?: string;
 }
 
 export interface Stats {
