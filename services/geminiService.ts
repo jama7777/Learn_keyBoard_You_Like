@@ -166,8 +166,8 @@ const getLocalFallback = (topic: string, format: string): string => {
 
 const callOpenRouter = async (prompt: string, options: { model?: string, mimeType?: string, data?: string } = {}) => {
   const apiKey = getApiKey();
-  // Try the lite model first, or the experimental free one if needed
-  const model = options.model || 'google/gemini-2.0-flash-lite-001';
+  // Use the OpenRouter free wildcard model that routes to any free model
+  const model = options.model || 'openrouter/free';
   
   const body: any = {
     model: model,
@@ -209,9 +209,9 @@ const callOpenRouter = async (prompt: string, options: { model?: string, mimeTyp
       const msg = err.error?.message || `HTTP ${response.status}`;
       
       // If model not found and we haven't tried fallback yet
-      if ((response.status === 404 || msg.includes("model")) && model !== 'google/gemini-2.0-flash-exp:free') {
+      if ((response.status === 404 || msg.includes("model")) && model !== 'openrouter/free') {
           console.warn(`[OpenRouter] Model ${model} failed, trying fallback...`);
-          return callOpenRouter(prompt, { ...options, model: 'google/gemini-2.0-flash-exp:free' });
+          return callOpenRouter(prompt, { ...options, model: 'openrouter/free' });
       }
       
       console.error("[OpenRouter Error]", msg);
@@ -232,13 +232,16 @@ export const generateLessonContent = async (topic: string, format: string = 'Par
     if (!aiConfig) return "API Key not found. Please add GEMINI_API_KEY to your .env file.";
     
     let typeInstruction = '';
-    switch (format) {
-      case 'Story': typeInstruction = 'Write a short, engaging creative story. Use paragraphs.'; break;
-      case 'Business Letter': typeInstruction = 'Write a professional formal letter body. Preserve standard letter spacing.'; break;
-      case 'Abstract': typeInstruction = 'Write a dense, academic abstract style paragraph.'; break;
-      case 'Code (Python)': typeInstruction = 'Write valid Python code snippet with comments. Preserve indentation and newlines. Do not use markdown backticks.'; break;
-      case 'Code (JS)': typeInstruction = 'Write valid JavaScript code snippet with comments. Preserve indentation and newlines. Do not use markdown backticks.'; break;
-      default: typeInstruction = 'Generate a plain text paragraph.';
+    if (format.startsWith('Code (')) {
+      const lang = format.slice(6, -1);
+      typeInstruction = `Write valid ${lang} code snippet with comments. Preserve indentation and newlines. Do not use markdown backticks.`;
+    } else {
+      switch (format) {
+        case 'Story': typeInstruction = 'Write a short, engaging creative story. Use paragraphs.'; break;
+        case 'Business Letter': typeInstruction = 'Write a professional formal letter body. Preserve standard letter spacing.'; break;
+        case 'Abstract': typeInstruction = 'Write a dense, academic abstract style paragraph.'; break;
+        default: typeInstruction = 'Generate a plain text paragraph.';
+      }
     }
     const prompt = `Task: ${typeInstruction}\nTopic/Input: "${topic}"\nInstructions:\n1. CRITICAL: If the Topic/Input appears to be a list of keys (e.g., "a,s,d,f", "numbers", "home row", "qwer"), ignore the Task format and instead generate a repetitive typing drill sequence using strictly those characters (and space).\n2. If it is a normal topic, follow the Task format requested. Length: ~50 words.\n3. Requirements: Use proper punctuation and capitalization for prose. No markdown formatting. Just raw text ready to be typed.`;
 

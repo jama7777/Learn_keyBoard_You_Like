@@ -47,6 +47,7 @@ const App: React.FC = () => {
   // AI Generator & Cloud State
   const [customTopic, setCustomTopic] = useState<string>('');
   const [customFormat, setCustomFormat] = useState<string>('Paragraph');
+  const [customLanguage, setCustomLanguage] = useState<string>('');
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState<boolean>(false);
 
@@ -266,23 +267,27 @@ const App: React.FC = () => {
     const topic = customTopic.trim() || 'Interesting facts';
     setIsLoading(true);
 
+    const actualFormat = customFormat === 'Code (Custom)' && customLanguage.trim() 
+        ? `Code (${customLanguage.trim()})` 
+        : customFormat;
+
     try {
-        const generatedText = await generateLessonContent(topic, customFormat);
+        const generatedText = await generateLessonContent(topic, actualFormat);
 
         if (customTopic) {
              const newItem: SearchHistoryItem = {
                  id: Date.now().toString(),
                  topic: topic,
-                 format: customFormat,
+                 format: actualFormat,
                  timestamp: Date.now()
              };
              setSearchHistory(prev => [newItem, ...prev.filter(i => i.topic !== newItem.topic || i.format !== newItem.format)].slice(0,20));
-             historyService.addToHistory(topic, customFormat);
+             historyService.addToHistory(topic, actualFormat);
         }
 
         const lesson: LessonConfig = {
             id: 'custom-ai',
-            title: customFormat === 'Code (Python)' ? 'Python Drill' : 'AI Session',
+            title: actualFormat.startsWith('Code') ? `${actualFormat.replace('Code (', '').replace(')', '')} Drill` : 'AI Session',
             description: topic,
             mode: LessonMode.AI_CUSTOM
         };
@@ -373,10 +378,15 @@ const App: React.FC = () => {
     }
   };
 
-  // Helper to use history item
   const useHistoryItem = (item: SearchHistoryItem) => {
     setCustomTopic(item.topic);
-    setCustomFormat(item.format);
+    if (item.format.startsWith('Code (') && item.format !== 'Code (Python)' && item.format !== 'Code (JS)') {
+        setCustomFormat('Code (Custom)');
+        setCustomLanguage(item.format.slice(6, -1));
+    } else {
+        setCustomFormat(item.format);
+        setCustomLanguage('');
+    }
     setShowHistory(false);
   };
 
@@ -467,7 +477,7 @@ const App: React.FC = () => {
                     backgroundAudioRef.current.play().catch(e => console.warn("Audio play blocked", e));
                  }
              }
-             // Clicks removed as requested
+             audioService.playClick();
          } else {
              audioService.playError();
          }
@@ -637,12 +647,24 @@ const App: React.FC = () => {
                             onChange={(e) => setCustomFormat(e.target.value)}
                             className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
                         >
-                            <option value="Paragraph">Text</option>
+                             <option value="Paragraph">Text</option>
+                            <option value="Story">Story</option>
                             <option value="Code (Python)">Python</option>
                             <option value="Code (JS)">JS</option>
-                            <option value="Story">Story</option>
+                            <option value="Code (Custom)">Other Code...</option>
                         </select>
                      </div>
+                     
+                     {customFormat === 'Code (Custom)' && (
+                         <input 
+                             type="text" 
+                             placeholder="Which language? (e.g. C#, Rust)" 
+                             className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                             value={customLanguage}
+                             onChange={(e) => setCustomLanguage(e.target.value)}
+                             onKeyDown={(e) => e.stopPropagation()} 
+                         />
+                     )}
                     
                     <button 
                         onClick={handleCreateCustomSession}
@@ -809,11 +831,22 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
-            {activeSong && (
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-pink-500/10 border border-pink-500/30 rounded-full text-xs text-pink-300 mr-2">
-                    <Music2 size={14} /> {activeSong.title}
-                </div>
-            )}
+            <button 
+                onClick={(e) => {
+                    e.currentTarget.blur();
+                    setShowMusicModal(true);
+                }}
+                className={`hidden sm:flex items-center gap-2 px-3 py-1 rounded-full text-xs transition-colors mr-2 cursor-pointer 
+                    ${activeSong ? 'bg-pink-500/10 border border-pink-500/30 text-pink-300 hover:bg-pink-500/20 hover:border-pink-500/50' 
+                                 : 'bg-slate-800/50 border border-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                title="Change Music"
+            >
+                {activeSong ? (
+                    <><Music2 size={14} className="animate-pulse" /> {activeSong.title}</>
+                ) : (
+                    <><Music size={14} /> Add Music</>
+                )}
+            </button>
             <button 
               onClick={toggleMute}
               className="text-slate-400 hover:text-indigo-400 transition-colors p-2 rounded hover:bg-slate-800"
@@ -947,6 +980,70 @@ const App: React.FC = () => {
           loop 
           className="hidden" 
         />
+      )}
+      
+            {/* Music Settings Modal */}
+      {showMusicModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-lg w-full shadow-2xl animate-in zoom-in-95 duration-200">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                          <Music className="text-pink-400" size={24} /> 
+                          Melody Typing
+                      </h3>
+                      <button onClick={() => setShowMusicModal(false)} className="text-slate-500 hover:text-white"><X size={20}/></button>
+                  </div>
+                  
+                  <p className="text-slate-400 text-sm mb-6">
+                      Every correct keystroke plays the next note of the song. Choose a melody or generate one!
+                  </p>
+                  <div className="max-h-72 overflow-y-auto pr-2 custom-scrollbar mb-6">
+                    <div className="flex flex-col gap-2">
+                        <button 
+                            onClick={() => setActiveSong(null)}
+                            className={`p-4 rounded-xl border-2 text-left font-bold transition-all flex items-center justify-between ${activeSong === null ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                        >
+                            <span className="flex items-center gap-3">
+                                {activeSong === null ? <VolumeX className="text-indigo-400" size={20} /> : <Volume2 size={20} />}
+                                No Background Melody (Default Clicks)
+                            </span>
+                            {activeSong === null && <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.5)]"></div>}
+                        </button>
+                        {PRESET_SONGS.map(song => (
+                            <button 
+                                key={song.id}
+                                onClick={() => setActiveSong(song)}
+                                className={`p-4 rounded-xl border-2 text-left font-bold transition-all flex items-center justify-between ${activeSong?.id === song.id ? 'bg-pink-500/10 border-pink-500 text-pink-200' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-pink-500/50'}`}
+                            >
+                                <span className="flex items-center gap-3">
+                                    <Music2 size={20} className={activeSong?.id === song.id ? "text-pink-400" : "text-slate-500"} />
+                                    {song.title}
+                                </span>
+                                {activeSong?.id === song.id && <div className="w-2.5 h-2.5 bg-pink-500 rounded-full shadow-[0_0_8px_rgba(236,72,153,0.5)]"></div>}
+                            </button>
+                        ))}
+                    </div>
+                  </div>
+                  
+                  <div className="border-t border-slate-800 pt-5">
+                      {/* Active Song Info */}
+                      {activeSong && !songError && (
+                           <div className="mt-4 p-4 bg-slate-950 rounded-2xl border border-slate-800 ring-1 ring-pink-500/20">
+                               <div className="flex items-center justify-between mb-3">
+                                   <div className="flex items-center gap-2 text-xs text-pink-300 font-extrabold uppercase tracking-widest">
+                                       <Music2 size={16} className="text-pink-500" /> Currently Active
+                                   </div>
+                                    <span className="px-2 py-0.5 rounded-full bg-pink-500/20 text-[10px] text-pink-400 font-bold">READY</span>
+                               </div>
+                               <h4 className="text-lg font-bold text-white mb-1 line-clamp-1">{activeSong.title}</h4>
+                               <p className="text-xs text-slate-500 font-mono">
+                                   {activeSong.notes.length} notes extracted. Each correct keystroke plays a note from the song.
+                               </p>
+                           </div>
+                       )}
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );

@@ -97,10 +97,10 @@ KEYBOARD_ROWS.forEach(row => {
     CHAR_TO_KEY_MAP[mainChar] = { code: key.code, finger: key.finger };
     
     // Uppercase mapping
-    if (mainChar !== key.label) {
-         CHAR_TO_KEY_MAP[key.label] = { code: key.code, finger: key.finger, shift: false };
-    } else if (mainChar.match(/[a-z]/)) {
+    if (mainChar.match(/^[a-z]$/)) {
          CHAR_TO_KEY_MAP[mainChar.toUpperCase()] = { code: key.code, finger: key.finger, shift: true };
+    } else if (mainChar !== key.label) {
+         CHAR_TO_KEY_MAP[key.label] = { code: key.code, finger: key.finger, shift: false };
     }
     
     // Special Symbol mappings
