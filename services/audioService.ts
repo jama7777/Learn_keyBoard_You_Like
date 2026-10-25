@@ -107,13 +107,16 @@ class AudioService {
     if (!this.context || !this.gainNode) return;
 
     const notes = [659.25, 880.00]; // E5, A5
-    const now = this.context.currentTime;
+    // Capture the context in a local: narrowing on `this.context` does not
+    // survive into the arrow callback below.
+    const ctx = this.context;
+    const now = ctx.currentTime;
     
     notes.forEach((freq, i) => {
-        const osc = this.context.createOscillator();
-        const gain = this.context.createGain();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
         osc.connect(gain);
-        gain.connect(this.context.destination);
+        gain.connect(ctx.destination);
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, now + i * 0.1);
         gain.gain.setValueAtTime(0, now + i * 0.1);

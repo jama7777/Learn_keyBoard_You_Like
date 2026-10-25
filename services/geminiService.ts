@@ -1,38 +1,94 @@
-import { GoogleGenAI } from "@google/genai";
 import { Song } from "../types";
 import { NOTE_FREQUENCIES } from "../constants";
 
-let ai: any = null;
+/**
+ * Client-side AI service.
+ *
+ * IMPORTANT: this file no longer touches any API key or makes a direct call to
+ * Google/OpenRouter. Every network call goes to our own /api/ai/generate route,
+ * which holds the key server-side. The previous version inlined the raw key into
+ * the browser bundle via Vite's `define`, so it was publicly readable.
+ *
+ * Parsing, note mapping and the local fallback content stay here because they
+ * are pure functions that run fine in the browser.
+ */
 
-const getApiKey = () => (process.env.API_KEY || process.env.GEMINI_API_KEY || '').trim();
+/**
+ * Calls the server AI proxy. Never throws — returns an error string instead, so
+ * callers keep their existing "show the message in the UI" behaviour.
+ */
+async function callAI(
+  prompt: string,
+  options: { mimeType?: string; data?: string; model?: string } = {},
+): Promise<string> {
+  try {
+    const response = await fetch("/api/ai/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        mimeType: options.mimeType,
+        data: options.data,
+        model: options.model,
+      }),
+    });
 
-const getAI = () => {
-  if (!ai) {
-    const apiKey = getApiKey();
-    const isOpenRouter = apiKey.startsWith('sk-or-');
-    
-    console.log("[AI Service] Initializing with Key:", apiKey ? `${apiKey.substring(0, 8)}...` : "MISSING", isOpenRouter ? "(OpenRouter)" : "(Google)");
+    const payload = await response.json().catch(() => ({}));
 
-    if (!apiKey) return null;
-
-    if (isOpenRouter) {
-      // For OpenRouter, we use fetch, so no singleton object needed in the same way,
-      // but we return a marker to indicate initialization success.
-      return { type: 'openrouter', apiKey };
+    if (!response.ok) {
+      return payload.error || `AI Error: HTTP ${response.status}`;
     }
-
-    try {
-      ai = new GoogleGenAI({ apiKey });
-      return { type: 'google', client: ai };
-    } catch (e) {
-      console.error("[AI Service] Google AI Constructor failed:", e);
-      return null;
-    }
+    return payload.text ?? "";
+  } catch (error) {
+    console.error("[AI Service] Proxy call failed:", error);
+    return "Network error reaching the AI service. Check your connection and try again.";
   }
-  
-  const apiKey = getApiKey();
-  if (apiKey.startsWith('sk-or-')) return { type: 'openrouter', apiKey };
-  return { type: 'google', client: ai };
+}
+
+const LOCAL_FALLBACK_CONTENT: Record<string, string[]> = {
+  default: [
+    "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump.",
+    "Practice makes perfect. Every keystroke brings you closer to mastery. Focus on accuracy before speed and the words will flow naturally.",
+    "Typing is a skill that improves with daily practice. Keep your fingers on the home row and let muscle memory guide each key.",
+    "The best way to improve your typing speed is to type regularly. Start slow, focus on accuracy, and speed will follow naturally over time.",
+    "Keep your wrists relaxed and your posture straight. A comfortable typing position reduces fatigue and helps you type faster and more accurately.",
+  ],
+  technology: [
+    "Software developers write code every day to build applications that millions of people use. Learning to type faster makes coding more efficient and enjoyable.",
+    "Artificial intelligence is transforming the way we work and live. From voice assistants to self-driving cars, technology continues to reshape our world.",
+    "Cloud computing allows businesses to store and access data remotely. This technology enables collaboration across teams working in different locations worldwide.",
+  ],
+  python: [
+    `# Python basics\ndef greet(name):\n    return f"Hello, {name}!"\n\nfor i in range(5):\n    print(greet(f"User {i}"))`,
+    `# List comprehension example\nnumbers = [1, 2, 3, 4, 5]\nsquares = [x ** 2 for x in numbers]\nprint(squares)  # Output: [1, 4, 9, 16, 25]`,
+  ],
+  javascript: [
+    `// Arrow function example\nconst add = (a, b) => a + b;\nconst result = add(3, 7);\nconsole.log(result); // 10`,
+    `// Array methods\nconst names = ['Alice', 'Bob', 'Carol'];\nconst upper = names.map(n => n.toUpperCase());\nconsole.log(upper);`,
+  ],
+  science: [
+    "The laws of thermodynamics govern energy transfer in the universe. The first law states that energy cannot be created or destroyed, only transformed.",
+    "DNA carries the genetic information that determines the traits of living organisms. Each cell contains billions of base pairs encoded in the double helix structure.",
+  ],
+  history: [
+    "The Renaissance was a cultural movement that began in Italy during the 14th century. It brought renewed interest in art, science, and classical learning.",
+    "The Industrial Revolution transformed manufacturing and transportation in the 18th and 19th centuries, fundamentally changing how people worked and lived.",
+  ],
+  nature: [
+    "The Amazon rainforest produces about twenty percent of the world's oxygen. It is home to millions of species of plants, animals, and insects.",
+    "Oceans cover more than seventy percent of the Earth's surface. They regulate climate, provide food, and are home to the majority of life on Earth.",
+  ],
+};
+
+const getLocalFallback = (topic: string, format: string): string => {
+  const lower = topic.toLowerCase();
+  let pool = LOCAL_FALLBACK_CONTENT.default;
+  for (const key of Object.keys(LOCAL_FALLBACK_CONTENT)) {
+    if (lower.includes(key)) { pool = LOCAL_FALLBACK_CONTENT[key]; break; }
+  }
+  if (format.includes('Python')) pool = LOCAL_FALLBACK_CONTENT.python;
+  if (format.includes('JS')) pool = LOCAL_FALLBACK_CONTENT.javascript;
+  return pool[Math.floor(Math.random() * pool.length)];
 };
 
 /** Maps a note string like "Bb4", "C#3", "D4" to a frequency number */
@@ -118,257 +174,83 @@ const findBuiltinMelody = (description: string): Song | null => {
   return null;
 };
 
-const LOCAL_FALLBACK_CONTENT: Record<string, string[]> = {
-  default: [
-    "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump.",
-    "Practice makes perfect. Every keystroke brings you closer to mastery. Focus on accuracy before speed and the words will flow naturally.",
-    "Typing is a skill that improves with daily practice. Keep your fingers on the home row and let muscle memory guide each key.",
-    "The best way to improve your typing speed is to type regularly. Start slow, focus on accuracy, and speed will follow naturally over time.",
-    "Keep your wrists relaxed and your posture straight. A comfortable typing position reduces fatigue and helps you type faster and more accurately.",
-  ],
-  technology: [
-    "Software developers write code every day to build applications that millions of people use. Learning to type faster makes coding more efficient and enjoyable.",
-    "Artificial intelligence is transforming the way we work and live. From voice assistants to self-driving cars, technology continues to reshape our world.",
-    "Cloud computing allows businesses to store and access data remotely. This technology enables collaboration across teams working in different locations worldwide.",
-  ],
-  python: [
-    `# Python basics\ndef greet(name):\n    return f"Hello, {name}!"\n\nfor i in range(5):\n    print(greet(f"User {i}"))`,
-    `# List comprehension example\nnumbers = [1, 2, 3, 4, 5]\nsquares = [x ** 2 for x in numbers]\nprint(squares)  # Output: [1, 4, 9, 16, 25]`,
-  ],
-  javascript: [
-    `// Arrow function example\nconst add = (a, b) => a + b;\nconst result = add(3, 7);\nconsole.log(result); // 10`,
-    `// Array methods\nconst names = ['Alice', 'Bob', 'Carol'];\nconst upper = names.map(n => n.toUpperCase());\nconsole.log(upper);`,
-  ],
-  science: [
-    "The laws of thermodynamics govern energy transfer in the universe. The first law states that energy cannot be created or destroyed, only transformed.",
-    "DNA carries the genetic information that determines the traits of living organisms. Each cell contains billions of base pairs encoded in the double helix structure.",
-  ],
-  history: [
-    "The Renaissance was a cultural movement that began in Italy during the 14th century. It brought renewed interest in art, science, and classical learning.",
-    "The Industrial Revolution transformed manufacturing and transportation in the 18th and 19th centuries, fundamentally changing how people worked and lived.",
-  ],
-  nature: [
-    "The Amazon rainforest produces about twenty percent of the world's oxygen. It is home to millions of species of plants, animals, and insects.",
-    "Oceans cover more than seventy percent of the Earth's surface. They regulate climate, provide food, and are home to the majority of life on Earth.",
-  ],
-};
-
-const getLocalFallback = (topic: string, format: string): string => {
-  const lower = topic.toLowerCase();
-  let pool = LOCAL_FALLBACK_CONTENT.default;
-  for (const key of Object.keys(LOCAL_FALLBACK_CONTENT)) {
-    if (lower.includes(key)) { pool = LOCAL_FALLBACK_CONTENT[key]; break; }
-  }
-  if (format.includes('Python')) pool = LOCAL_FALLBACK_CONTENT.python;
-  if (format.includes('JS')) pool = LOCAL_FALLBACK_CONTENT.javascript;
-  return pool[Math.floor(Math.random() * pool.length)];
-};
-
-const callOpenRouter = async (prompt: string, options: { model?: string, mimeType?: string, data?: string } = {}) => {
-  const apiKey = getApiKey();
-  // Use the OpenRouter free wildcard model that routes to any free model
-  const model = options.model || 'openrouter/free';
-  
-  const body: any = {
-    model: model,
-    messages: [
-      {
-        role: "user",
-        content: prompt
-      }
-    ],
-    temperature: 0.7,
-  };
-
-  if (options.data && options.mimeType) {
-    body.messages[0].content = [
-      { type: "text", text: prompt },
-      {
-        type: "image_url",
-        image_url: {
-          url: `data:${options.mimeType};base64,${options.data}`
-        }
-      }
-    ];
-  }
-
-  try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-        "HTTP-Referer": window.location.origin || "http://localhost:3000",
-        "X-Title": "TypeMaster AI"
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-      const err = await response.json();
-      const msg = err.error?.message || `HTTP ${response.status}`;
-      
-      // If model not found and we haven't tried fallback yet
-      if ((response.status === 404 || msg.includes("model")) && model !== 'openrouter/free') {
-          console.warn(`[OpenRouter] Model ${model} failed, trying fallback...`);
-          return callOpenRouter(prompt, { ...options, model: 'openrouter/free' });
-      }
-      
-      console.error("[OpenRouter Error]", msg);
-      throw new Error(msg);
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || "";
-  } catch (e: any) {
-    console.error("[OpenRouter Connection Error]", e);
-    throw e;
-  }
-};
-
 export const generateLessonContent = async (topic: string, format: string = 'Paragraph'): Promise<string> => {
-  try {
-    const aiConfig = getAI();
-    if (!aiConfig) return "API Key not found. Please add GEMINI_API_KEY to your .env file.";
-    
-    let typeInstruction = '';
-    if (format.startsWith('Code (')) {
-      const lang = format.slice(6, -1);
-      typeInstruction = `Write valid ${lang} code snippet with comments. Preserve indentation and newlines. Do not use markdown backticks.`;
-    } else {
-      switch (format) {
-        case 'Story': typeInstruction = 'Write a short, engaging creative story. Use paragraphs.'; break;
-        case 'Business Letter': typeInstruction = 'Write a professional formal letter body. Preserve standard letter spacing.'; break;
-        case 'Abstract': typeInstruction = 'Write a dense, academic abstract style paragraph.'; break;
-        default: typeInstruction = 'Generate a plain text paragraph.';
-      }
+  let typeInstruction = '';
+  if (format.startsWith('Code (')) {
+    const lang = format.slice(6, -1);
+    typeInstruction = `Write valid ${lang} code snippet with comments. Preserve indentation and newlines. Do not use markdown backticks.`;
+  } else {
+    switch (format) {
+      case 'Story': typeInstruction = 'Write a short, engaging creative story. Use paragraphs.'; break;
+      case 'Business Letter': typeInstruction = 'Write a professional formal letter body. Preserve standard letter spacing.'; break;
+      case 'Abstract': typeInstruction = 'Write a dense, academic abstract style paragraph.'; break;
+      default: typeInstruction = 'Generate a plain text paragraph.';
     }
-    const prompt = `Task: ${typeInstruction}\nTopic/Input: "${topic}"\nInstructions:\n1. CRITICAL: If the Topic/Input appears to be a list of keys (e.g., "a,s,d,f", "numbers", "home row", "qwer"), ignore the Task format and instead generate a repetitive typing drill sequence using strictly those characters (and space).\n2. If it is a normal topic, follow the Task format requested. Length: ~50 words.\n3. Requirements: Use proper punctuation and capitalization for prose. No markdown formatting. Just raw text ready to be typed.`;
+  }
+  const prompt = `Task: ${typeInstruction}\nTopic/Input: "${topic}"\nInstructions:\n1. CRITICAL: If the Topic/Input appears to be a list of keys (e.g., "a,s,d,f", "numbers", "home row", "qwer"), ignore the Task format and instead generate a repetitive typing drill sequence using strictly those characters (and space).\n2. If it is a normal topic, follow the Task format requested. Length: ~50 words.\n3. Requirements: Use proper punctuation and capitalization for prose. No markdown formatting. Just raw text ready to be typed.`;
 
-    let text = '';
-    if (aiConfig.type === 'openrouter') {
-      text = await callOpenRouter(prompt);
-    } else {
-      const response = await aiConfig.client.models.generateContent({ 
-        model: 'gemini-2.0-flash-lite', 
-        contents: [{ role: 'user', parts: [{ text: prompt }] }] 
-      });
-      text = response.text || '';
-    }
+  const text = await callAI(prompt);
 
-    if (!text) throw new Error("AI returned empty content.");
-
-    return text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
-  } catch (error: any) {
-    console.error("[AI Service] Lesson Generation error:", error);
-    
-    // If it's a topic-related request and it failed, maybe show the error to user
-    // but only if it's not a generic fallback.
-    const errorMsg = error.message || "Unknown error";
-    if (errorMsg.includes("401") || errorMsg.includes("Unauthorized") || errorMsg.includes("API key")) {
-      return `API Error: Unauthorized. Please check your OpenRouter key. Details: ${errorMsg}`;
-    }
-    if (errorMsg.includes("404") || errorMsg.includes("model_not_found")) {
-      return `API Error: Model not found. Details: ${errorMsg}`;
-    }
-    
-    // For specific user queries like "what is love", fallback content is confusing.
-    // Let's return the error if it's clearly an API issue.
+  if (!text) {
+    // Distinguish a real API failure from a short/drill topic so we only fall
+    // back to canned text when it will not look wrong.
     if (topic.length > 5) {
-      return `AI Generation failed: ${errorMsg}. Please try again later.`;
+      return `AI Generation failed: empty response. Please try again later.`;
     }
-
     return getLocalFallback(topic, format);
   }
+
+  // Surface the server's own error message instead of a canned paragraph.
+  if (text.startsWith('AI Error:') || text.startsWith('Rate limit') || text.startsWith('The model provider')) {
+    return text;
+  }
+
+  return text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
 };
 
 export const processFileContent = async (base64Data: string, mimeType: string): Promise<string> => {
-  try {
-    const aiConfig = getAI();
-    const base64String = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;
-    const prompt = `Transcribe the content of this file exactly as it appears. Return ONLY the raw text content, no commentary.`;
-    
-    let text = '';
-    if (aiConfig?.type === 'openrouter') {
-       text = await callOpenRouter(prompt, { data: base64String, mimeType });
-    } else {
-      const response = await aiConfig.client.models.generateContent({
-        model: 'gemini-2.0-flash-lite',
-        contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: base64String } }, { text: prompt }] }]
-      });
-      text = response.text || '';
-    }
-    
-    return text.replace(/^```[a-z]*\n?/, '').replace(/```$/, '').trim();
-  } catch (error: any) {
-    console.error("AI file processing error:", error);
-    return `Error processing file: ${error.message || 'Check API'}`;
+  const base64String = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;
+  const prompt = `Transcribe the content of this file exactly as it appears. Return ONLY the raw text content, no commentary.`;
+
+  const text = await callAI(prompt, { data: base64String, mimeType });
+  if (text.startsWith('AI Error:') || text.startsWith('Network error') || text.startsWith('Rate limit')) {
+    return `Error processing file: ${text}`;
   }
+  return text.replace(/^```[a-z]*\n?/, '').replace(/```$/, '').trim();
 };
 
 export const extractMelodyFromAudio = async (base64Data: string, mimeType: string): Promise<Song | null> => {
-  try {
-    const aiConfig = getAI();
-    const base64String = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;
-    const prompt = `Listen to this audio. Identify the song name if known, then transcribe its main melody as musical notes.
+  const base64String = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;
+  const prompt = `Listen to this audio. Identify the song name if known, then transcribe its main melody as musical notes.
 Return ONLY raw JSON (no markdown):
 {"title": "Song Name", "notes": ["C4","E4","G4","C5"]}
 Rules: Use ONLY sharps notation. Allowed notes: C3 C#3 D3 D#3 E3 F3 F#3 G3 G#3 A3 A#3 B3 C4 C#4 D4 D#4 E4 F4 F#4 G4 G#4 A4 A#4 B4 C5 C#5 D5 D#5 E5 F5 F#5 G5 G#5 A5 A#5 B5 C6. NEVER use Bb Db Eb Gb Ab. Include 20-40 notes.`;
 
-    let text = '';
-    if (aiConfig?.type === 'openrouter') {
-       text = await callOpenRouter(prompt, { data: base64String, mimeType });
-    } else {
-      const response = await aiConfig.client.models.generateContent({
-        model: 'gemini-2.0-flash-lite',
-        contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: base64String } }, { text: prompt }] }]
-      });
-      text = response.text || '';
-    }
+  const text = await callAI(prompt, { data: base64String, mimeType });
+  if (!text || text.startsWith('AI Error:') || text.startsWith('Network error')) return null;
 
-    const result = parseJson(text);
-    if (result?.notes && Array.isArray(result.notes)) {
-      const frequencies = notesToFrequencies(result.notes);
-      if (frequencies.length > 0) {
-        return { id: `upload_${Date.now()}`, title: result.title || 'Uploaded Melody', notes: frequencies };
-      }
+  const result = parseJson(text);
+  if (result?.notes && Array.isArray(result.notes)) {
+    const frequencies = notesToFrequencies(result.notes);
+    if (frequencies.length > 0) {
+      return { id: `upload_${Date.now()}`, title: result.title || 'Uploaded Melody', notes: frequencies };
     }
-    return null;
-  } catch (error) {
-    console.error("AI audio processing error:", error);
-    return null;
   }
+  return null;
 };
 
 export const fixGrammar = async (text: string): Promise<string> => {
-  try {
-    const aiConfig = getAI();
-    const prompt = `Correct all spelling, grammar, and punctuation errors in this text. Return ONLY the corrected text, no commentary:\n\n${text}`;
-    
-    let result = '';
-    if (aiConfig?.type === 'openrouter') {
-      result = await callOpenRouter(prompt);
-    } else {
-      const response = await aiConfig.client.models.generateContent({ 
-          model: 'gemini-2.0-flash-lite', 
-          contents: [{ role: 'user', parts: [{ text: prompt }] }] 
-      });
-      result = response.text || '';
-    }
-    return result.trim() || text;
-  } catch (error) {
-    console.error("AI grammar fix error:", error);
-    return text;
-  }
+  const prompt = `Correct all spelling, grammar, and punctuation errors in this text. Return ONLY the corrected text, no commentary:\n\n${text}`;
+  const result = await callAI(prompt);
+  if (result.startsWith('AI Error:') || result.startsWith('Network error')) return text;
+  return result.trim() || text;
 };
 
 export const generateSong = async (description: string): Promise<Song | null> => {
   const builtin = findBuiltinMelody(description);
   if (builtin) return builtin;
 
-  try {
-    const aiConfig = getAI();
-    const prompt = `Create a melody for: "${description}"
+  const prompt = `Create a melody for: "${description}"
 Return ONLY this exact JSON format (no backticks, no markdown, no explanation):
 {"title":"Song Name","notes":["C4","E4","G4","A4","G4","F4","E4","C4"]}
 RULES:
@@ -376,27 +258,15 @@ RULES:
 - NEVER use: Bb Db Eb Gb Ab Cb Fb
 - Include exactly 28-36 notes`;
 
-    let text = '';
-    if (aiConfig?.type === 'openrouter') {
-      text = await callOpenRouter(prompt);
-    } else {
-      const response = await aiConfig.client.models.generateContent({ 
-          model: 'gemini-2.0-flash-lite', 
-          contents: [{ role: 'user', parts: [{ text: prompt }] }] 
-      });
-      text = response.text || '';
-    }
+  const text = await callAI(prompt);
+  if (!text || text.startsWith('AI Error:') || text.startsWith('Network error')) return null;
 
-    const result = parseJson(text);
-    if (result?.notes && Array.isArray(result.notes) && result.notes.length > 0) {
-      const frequencies = notesToFrequencies(result.notes);
-      if (frequencies.length >= 5) {
-        return { id: `ai_${Date.now()}`, title: result.title || description, notes: frequencies };
-      }
+  const result = parseJson(text);
+  if (result?.notes && Array.isArray(result.notes) && result.notes.length > 0) {
+    const frequencies = notesToFrequencies(result.notes);
+    if (frequencies.length >= 5) {
+      return { id: `ai_${Date.now()}`, title: result.title || description, notes: frequencies };
     }
-  } catch (error) {
-    console.error("AI song generation error:", error);
   }
-
   return null;
 };

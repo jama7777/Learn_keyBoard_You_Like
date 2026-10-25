@@ -1,23 +1,46 @@
 {
   "name": "typemaster-ai",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:migrate": "drizzle-kit migrate",
+    "test:db": "tsx scripts/test-db-queries.mjs"
   },
   "dependencies": {
+    "@ai-sdk/google": "^4.0.105",
+    "@ai-sdk/openai": "^4.0.102",
+    "@ai-sdk/openai-compatible": "^1.0.0",
+    "@auth/drizzle-adapter": "^1.11.3",
+    "@neondatabase/serverless": "^1.2.0",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.39.0",
+    "ai": "^7.0.153",
+    "drizzle-orm": "^0.45.4",
+    "lucide-react": "^0.555.0",
+    "next": "^16.4.3",
+    "next-auth": "5.0.0-beta.32",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "@google/genai": "^1.30.0",
-    "lucide-react": "^0.555.0"
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "drizzle-kit": "^0.31.11",
+    "pg": "^8.23.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.8.2"
   }
 }

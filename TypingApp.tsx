@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Play, RotateCcw, Keyboard, Activity, Brain, Volume2, VolumeX, FileText, AlertCircle, Upload, FileUp, Loader2, History, Trash2, Clock, X, Wand2, Sparkles, Music, Music2, Mic2, Plus, FileAudio } from 'lucide-react';
 
@@ -100,9 +102,13 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Load Local History on Mount
+  // Load history on mount (server-backed when signed in, localStorage cache otherwise)
   useEffect(() => {
-    setSearchHistory(historyService.getHistory());
+    let cancelled = false;
+    historyService.getHistory().then(items => {
+      if (!cancelled) setSearchHistory(items);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // Dynamic Auto-Correction Effect
@@ -282,7 +288,10 @@ const App: React.FC = () => {
                  timestamp: Date.now()
              };
              setSearchHistory(prev => [newItem, ...prev.filter(i => i.topic !== newItem.topic || i.format !== newItem.format)].slice(0,20));
-             historyService.addToHistory(topic, actualFormat);
+             // Persist in the background; the optimistic update above already rendered it.
+             historyService.addToHistory(topic, actualFormat).then(updated => {
+               if (updated) setSearchHistory(updated);
+             });
         }
 
         const lesson: LessonConfig = {
@@ -395,9 +404,8 @@ const App: React.FC = () => {
     e.stopPropagation();
     // Optimistic UI update
     setSearchHistory(prev => prev.filter(i => i.id !== id));
-    
-    const updated = historyService.deleteItem(id);
-    setSearchHistory(updated);
+
+    historyService.deleteItem(id).then(updated => setSearchHistory(updated));
   };
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {

@@ -21,5 +21,22 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
+
 *.sw?
+
+# Env — never commit keys
 .env
+.env*.local
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# TypeScript
+*.tsbuildinfo
+
+# Drizzle
+drizzle/meta/
+.vercel
+.env*
