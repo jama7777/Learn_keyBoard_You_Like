@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import SignInButtons from './SignInButtons';
 
 export const runtime = 'nodejs';
 
@@ -34,22 +35,7 @@ export default async function SignInPage() {
         </p>
 
         <div className="mt-6 space-y-3">
-          {providers.length === 0 && (
-            <p className="text-sm text-amber-400">
-              No auth providers configured. Set AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET
-              and/or AUTH_GITHUB_ID / AUTH_GITHUB_SECRET in the environment.
-            </p>
-          )}
-
-          {providers.map((provider) => (
-            <a
-              key={provider.id}
-              href={`/api/auth/signin/${provider.id}`}
-              className="block w-full rounded-lg bg-slate-800 px-4 py-3 text-center text-sm font-semibold text-slate-100 transition hover:bg-slate-700"
-            >
-              Sign in with {provider.name}
-            </a>
-          ))}
+          <SignInButtons providers={providers} />
         </div>
 
         <p className="mt-6 text-xs text-slate-500">

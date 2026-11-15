@@ -112,3 +112,28 @@ export const typingStats = pgTable(
     check('typing_stats_duration_range', sql`${t.durationMs} >= 0`),
   ],
 );
+
+/**
+ * One row per telemetry flush from a visitor's browser. Stores the computed
+ * risk score and a compact signal summary so the dashboard can review visits.
+ * Raw event arrays are intentionally NOT stored (PII + size); only aggregates.
+ */
+export const interactionSessions = pgTable(
+  'interaction_sessions',
+  {
+    id: serial('id').primaryKey(),
+    sessionId: text('session_id').notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    score: integer('score').notNull(),
+    classification: text('classification').notNull(),
+    uaBot: integer('ua_bot').notNull().default(0),
+    eventCount: integer('event_count').notNull().default(0),
+    keyCount: integer('key_count').notNull().default(0),
+    mouseMoves: integer('mouse_moves').notNull().default(0),
+    scrolls: integer('scrolls').notNull().default(0),
+    spanMs: integer('span_ms').notNull().default(0),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('interaction_sessions_created_idx').on(t.createdAt), index('interaction_sessions_session_idx').on(t.sessionId)],
+);

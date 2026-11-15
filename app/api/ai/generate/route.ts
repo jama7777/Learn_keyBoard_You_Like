@@ -3,21 +3,37 @@ import { z } from 'zod';
 import { auth } from '@/auth';
 import { generateAIContent, getProvider, AIKeyMissingError } from '@/lib/ai';
 import { checkAI, rateLimitHeaders } from '@/lib/rate-limit';
+import { isSameOrigin } from '@/lib/origin-check';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const bodySchema = z.object({
   prompt: z.string().min(1).max(20_000),
-  data: z.string().max(25_000_000).optional(),
+  // Base64 of the file/audio the model should read. Capped well below Vercel's
+  // request-body ceiling so a caller cannot hand the function a multi-hundred-MB
+  // string it then has to parse.
+  data: z.string().max(8_000_000).optional(),
   mimeType: z.string().max(200).optional(),
-  model: z.string().max(200).optional(),
   task: z.enum(['lesson', 'grammar', 'file', 'song', 'melody']).optional(),
 });
 
 export async function POST(request: Request) {
   const session = await auth();
   const userId = session?.user?.id;
+
+  // This route spends a paid provider quota, so it must not be reachable
+  // anonymously. Everything below is keyed to the signed-in user.
+  if (!userId) {
+    return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
+  }
+
+  // CSRF defense-in-depth: reject cross-origin POSTs outright. SameSite=Lax
+  // already stops the browser from sending the session cookie cross-site; this
+  // is a second line of defence for the billable AI call.
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
 
   // Rate limit BEFORE doing any work, so a burst of requests cannot reach the
   // paid model provider.
@@ -44,11 +60,12 @@ export async function POST(request: Request) {
   }
 
   try {
+    // The model is never taken from the request: a caller choosing `model` could
+    // steer the proxy at an expensive one. The server pins it in lib/ai.ts.
     const text = await generateAIContent({
       prompt: parsed.prompt,
       data: parsed.data,
       mimeType: parsed.mimeType,
-      model: parsed.model,
     });
 
     return NextResponse.json({ text }, { headers: rateLimitHeaders(rl) });

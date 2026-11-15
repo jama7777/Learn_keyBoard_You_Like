@@ -37,7 +37,7 @@ const isSignedIn = async (): Promise<boolean> => {
     const res = await fetch("/api/session", { cache: "no-store" });
     if (!res.ok) return false;
     const data = await res.json();
-    return Boolean(data.user);
+    return data.signedIn === true;
   } catch {
     return false;
   }

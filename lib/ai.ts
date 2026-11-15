@@ -8,22 +8,29 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
  * are never inlined into the client bundle, which is the entire point of moving
  * the calls off the browser.
  *
- * Provider selection mirrors the original single-slot behaviour — an `sk-or-…`
- * key means OpenRouter, anything else means Google — but each provider now has
- * its own named env var so both can be configured at once.
+ * Providers are selected by which env var is present, each with its own name:
+ * GEMINI_API_KEY for Google, OPENROUTER_API_KEY for OpenRouter. Google is
+ * preferred because its free tier is direct and high-priority.
  */
 
-const GOOGLE_MODEL = 'gemini-2.0-flash-lite';
+// Pinned, not "latest": a typing-lesson generator should not silently change
+// output or cost. Bump this deliberately when Google retires a generation.
+const GOOGLE_MODEL = 'gemini-3.5-flash-lite';
 const OPENROUTER_MODEL = 'openrouter/free';
 
 type Provider = 'google' | 'openrouter' | null;
 
+/**
+ * Google first: its free tier is direct, high-priority and generous on
+ * flash-lite, so it is the production default. OpenRouter is the fallback for
+ * when Gemini is unavailable — set OPENROUTER_API_KEY on its own to force it.
+ */
 function resolveProvider(): Provider {
-  const openRouter = process.env.OPENROUTER_API_KEY?.trim();
-  if (openRouter) return 'openrouter';
-
   const google = (process.env.GEMINI_API_KEY || process.env.API_KEY || '').trim();
   if (google) return 'google';
+
+  const openRouter = process.env.OPENROUTER_API_KEY?.trim();
+  if (openRouter) return 'openrouter';
 
   return null;
 }

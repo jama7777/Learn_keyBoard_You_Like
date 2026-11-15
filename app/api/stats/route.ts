@@ -5,6 +5,7 @@ import { db, dbConfigured } from '@/db';
 import { typingStats } from '@/db/schema';
 import { desc, eq, sql } from 'drizzle-orm';
 import { checkStats, rateLimitHeaders } from '@/lib/rate-limit';
+import { isSameOrigin } from '@/lib/origin-check';
 
 export const runtime = 'nodejs';
 
@@ -33,6 +34,11 @@ export async function POST(request: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
+
+  // CSRF defense-in-depth (SameSite=Lax is the primary control).
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
 
   const rl = await checkStats(userId);
   if (!rl.allowed) {

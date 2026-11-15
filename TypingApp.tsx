@@ -210,9 +210,11 @@ const App: React.FC = () => {
         reader.onload = async (e) => {
             const base64Data = e.target?.result as string;
             if (base64Data) {
-               // Also set as background audio
-               const blob = await (await fetch(base64Data)).blob();
-               const url = URL.createObjectURL(blob);
+               // Also set as background audio.
+               // Build the object URL straight from the File we already hold.
+               // Fetching the base64 data: URL back would force the CSP to
+               // allow `data:` in connect-src for every request the app makes.
+               const url = URL.createObjectURL(file);
                setBackgroundAudioUrl(url);
 
                const song = await extractMelodyFromAudio(base64Data, file.type);

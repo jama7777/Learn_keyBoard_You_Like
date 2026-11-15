@@ -1,0 +1,5 @@
+# See https://securitytxt.org/ for details.
+Contact: mailto:jama.gottipati7@gmail.com
+Expires: 2027-10-25T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://learn-key-board-you-like.vercel.app/.well-known/security.txt
