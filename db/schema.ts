@@ -137,3 +137,22 @@ export const interactionSessions = pgTable(
   },
   (t) => [index('interaction_sessions_created_idx').on(t.createdAt), index('interaction_sessions_session_idx').on(t.sessionId)],
 );
+
+/**
+ * Lightweight audit trail for security-relevant events (sign-in, sign-out,
+ * account deletion, AI generation). Append-only; never store secrets or tokens.
+ * Used for incident review and abuse detection.
+ */
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: serial('id').primaryKey(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    event: text('event').notNull(),
+    detail: text('detail'),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('audit_log_created_idx').on(t.createdAt), index('audit_log_user_idx').on(t.userId)],
+);

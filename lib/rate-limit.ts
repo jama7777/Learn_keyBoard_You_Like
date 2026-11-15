@@ -102,7 +102,11 @@ async function safeCheck(
       '[rate-limit] unavailable, failing open:',
       error instanceof Error ? error.message : error,
     );
-    if (process.env.RATE_LIMIT_STRICT === 'true') throw error;
+    if (process.env.RATE_LIMIT_STRICT === 'true') {
+      // Fail closed, but gracefully: report a blocked result instead of throwing
+      // so the route returns 429/503 rather than a 500.
+      return { allowed: false, limit: 0, remaining: 0, reset: 0, retryAfter: 60 };
+    }
     return 'unavailable';
   }
 }
